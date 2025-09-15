@@ -25,7 +25,7 @@ EXPOSE 3000
 # env defaults (override at runtime)
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV ADMIN_TOKEN=please_set_a_secret_token
+ENV ADMIN_TOKEN=BULLET-108
 # Optionally enable cookie validation
 ENV VALIDATE_COOKIES=true
 
