@@ -1,37 +1,33 @@
-FROM node:20-bullseye
+# Use Playwright official image which already contains browsers + deps
+FROM mcr.microsoft.com/playwright:latest
 
-# System deps (chromium + playwright need)
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    fonts-liberation \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libpango-1.0-0 \
-    libxcursor1 \
-    libxss1 \
-    wget \
-    --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
-
+# set workdir
 WORKDIR /usr/src/app
-COPY package*.json ./
-RUN npm install --omit=dev
 
-# Install browsers (headless chromium etc.)
-RUN npx playwright install --with-deps
+# copy package manifests first (for caching)
+COPY package.json package-lock.json* ./
 
+# install npm deps (production)
+RUN npm ci --production
+
+# copy app source
 COPY . .
 
+# create writable dirs for uploads/logs
+RUN mkdir -p uploads logs public && chown -R pwuser:pwuser /usr/src/app/uploads /usr/src/app/logs /usr/src/app/public
+
+# switch to non-root user that Playwright image uses
+USER pwuser
+
+# expose port (match your app)
+EXPOSE 3000
+
+# env defaults (override at runtime)
 ENV NODE_ENV=production
+ENV PORT=3000
+ENV ADMIN_TOKEN=please_set_a_secret_token
+# Optionally enable cookie validation
 ENV VALIDATE_COOKIES=true
 
-EXPOSE 3000
+# start server
 CMD ["node", "server.js"]
