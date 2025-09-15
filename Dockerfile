@@ -8,7 +8,7 @@ WORKDIR /usr/src/app
 COPY package.json package-lock.json* ./
 
 # install npm deps (production)
-RUN npm ci --production
+RUN npm install --omit=dev
 
 # copy app source
 COPY . .
