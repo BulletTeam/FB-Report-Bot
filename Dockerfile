@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /usr/src/app
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --omit=dev
 
 # Install browsers (headless chromium etc.)
 RUN npx playwright install --with-deps
