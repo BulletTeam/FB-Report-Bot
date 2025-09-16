@@ -669,25 +669,99 @@ const entry = {
   validateResult: result
 };
 
-    let parsedCount = 0;
-    for (let i=0;i<lines.length;i++) {
-      const l = lines[i];
-      const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(l);
-      const snippet = makeSnippet(l, 120);
-      const summary = { lineIndex: i+1, snippet, hasCUser, hasXs, isAccount };
+// inside your uploadCookies handler, replace the processing loop with this:
 
-      if (!isAccount) {
-        sseSend(sessionId, 'cookieStatus', { status: 'invalid', reason: 'missing c_user/xs', ...summary });
-        const entry = {
-          lineIndex: i+1, originalLine: l, snippet,
-          hasCUser, hasXs, isAccount,
-          parsedAt: (new Date()).toISOString(),
-          validateResult: { status: 'invalid', reason: 'missing c_user/xs' }
-        };
-        COOKIE_INDEX.cookies.push(entry);
-        saveCookieIndex();
-        continue;
+let parsedCount = 0;
+
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  try {
+    const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
+    const snippet = makeSnippet(line, 120);
+    const summary = { lineIndex: i + 1, snippet, hasCUser, hasXs, isAccount };
+
+    if (!isAccount) {
+      sseSend(sessionId, 'cookieStatus', { status: 'invalid', reason: 'missing c_user/xs', ...summary });
+      const entry = {
+        lineIndex: i + 1, originalLine: line, snippet,
+        hasCUser, hasXs, isAccount,
+        parsedAt: (new Date()).toISOString(),
+        validateResult: { status: 'invalid', reason: 'missing c_user/xs' }
+      };
+      COOKIE_INDEX.cookies.push(entry);
+      saveCookieIndex();
+      continue;
+    }
+
+    parsedCount++;
+    sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
+
+    const cookieObjects = [];
+    for (const [k, v] of Object.entries(kv)) {
+      if (k && v !== undefined) {
+        cookieObjects.push({ name: k, value: v, domain: '.facebook.com', path: '/', httpOnly: false, secure: true });
       }
+    }
+
+    sseSend(sessionId, 'log', { msg: `Validating account line ${i+1}` });
+
+    let result = { status: 'parsed', reason: 'validation-skipped' };
+    if (VALIDATE_COOKIES) {
+      try {
+        result = await quickValidateCookie(cookieObjects, sessionId);
+      } catch (err) {
+        result = { status: 'error', reason: err && err.message ? err.message : String(err) };
+      }
+    } else {
+      result = { status: 'parsed', reason: 'validation-disabled' };
+    }
+
+    // emit appropriate SSE
+    if (result.status === 'live') {
+      sseSend(sessionId, 'cookieStatus', { status: 'live', lineIndex: i + 1, reason: result.reason, url: result.url || null });
+    } else if (result.status === 'invalid') {
+      sseSend(sessionId, 'cookieStatus', { status: 'invalid', lineIndex: i + 1, reason: result.reason, url: result.url || null });
+    } else if (result.status === 'parsed') {
+      sseSend(sessionId, 'cookieStatus', { status: 'parsed', lineIndex: i + 1, reason: result.reason });
+    } else {
+      sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: result.reason });
+    }
+
+    const entry = {
+      lineIndex: i + 1,
+      originalLine: line,
+      snippet,
+      hasCUser, hasXs, isAccount,
+      parsedAt: (new Date()).toISOString(),
+      validateResult: result
+    };
+    COOKIE_INDEX.cookies.push(entry);
+    saveCookieIndex();
+
+    // polite gap
+    await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
+
+  } catch (lineErr) {
+    // log the per-line error but don't reference any outer variable named `l`
+    simpleLog('uploadCookies-line-error', { lineIndex: i + 1, error: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
+    sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
+
+    // still store an index entry so UI sees it
+    COOKIE_INDEX.cookies.push({
+      lineIndex: i + 1,
+      originalLine: line,
+      snippet: makeSnippet(line, 120),
+      hasCUser: false,
+      hasXs: false,
+      isAccount: false,
+      parsedAt: (new Date()).toISOString(),
+      validateResult: { status: 'error', reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) }
+    });
+    saveCookieIndex();
+    // continue to next line
+    continue;
+  }
+}
 
       parsedCount++;
       sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
