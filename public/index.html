@@ -159,6 +159,21 @@
     }
     .option-item input{ width:20px; height:20px; transform:scale(1.05); }
 
+       /* cookie table */
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+    th, td { padding:8px 10px; border-bottom:1px solid #eef2f6; text-align:left; vertical-align:top; }
+    th { background:#fbfdff; font-weight:800; font-size:13px; }
+    .snippet { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+    .reason { max-width:280px; word-break:break-all; font-size:12px; color:#333; }
+    .status-live { color: #059669; font-weight:800; }
+    .status-invalid { color:#dc2626; font-weight:800; }
+    .status-parsed { color:#374151; font-weight:700; }
+    .status-error { color: #b45309; font-weight:800; }
+
+  
+    .log-area { background:#000; color:#66ff99; padding:14px; border-radius:8px; height:320px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap; }
+    #cookieLog { background:#0b1220; color:#9fe0ff; padding:10px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; font-size:12px; }
+
     .logs-card { padding:22px; border-radius:16px; background: linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0; box-shadow: 0 14px 40px rgba(2,6,23,0.45); margin-top:12px; }
     .log-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; font-size:18px; color:#f1d4ff; }
     pre.log-area{
@@ -177,71 +192,6 @@
 
     footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); padding:12px 0; }
 
-    /* ====== NEW: truncate & modal styles for cookie table ====== */
-    #cookieTable { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
-    #cookieTable th, #cookieTable td { padding:8px 6px; border-bottom:1px solid #eef3fb; text-align:left; vertical-align:top; }
-    #cookieTable td.snippet {
-      max-width: 320px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
-      font-size: 12px;
-    }
-    #cookieTable td.reason {
-      max-width: 360px;
-      word-break: break-word;
-      font-size: 12px;
-      color: #444;
-    }
-    #cookieTable td.action { width:110px; }
-
-    @media (max-width: 720px) {
-      #cookieTable td.snippet { max-width: 160px; font-size:11px; }
-      #cookieTable td.reason { max-width: 180px; font-size:11px; }
-    }
-
-    /* modal */
-    #fullViewModal {
-      position: fixed;
-      left:0; top:0; right:0; bottom:0;
-      display:none;
-      align-items:center;
-      justify-content:center;
-      background: rgba(4,6,11,0.6);
-      z-index: 9999;
-    }
-    #fullViewModal .modal-body {
-      background: #fff;
-      color: #0b1220;
-      max-width: 92%;
-      max-height: 84%;
-      overflow:auto;
-      border-radius: 10px;
-      padding: 14px;
-      box-shadow: 0 12px 40px rgba(2,6,23,0.4);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
-      font-size: 13px;
-      white-space: pre-wrap;
-    }
-    #fullViewModal .modal-close {
-      float: right;
-      cursor: pointer;
-      background: #ef4444;
-      color: #fff;
-      border-radius:6px;
-      padding:6px 10px;
-      border:0;
-    }
-    .btn-view-full {
-      background: transparent;
-      border: 1px solid #e6eef6;
-      color: #0b1220;
-      padding: 6px 8px;
-      font-size:12px;
-      border-radius:6px;
-      cursor:pointer;
-    }
   </style>
 </head>
 <body>
