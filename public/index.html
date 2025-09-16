@@ -14,7 +14,6 @@
       --accent:#ff4d4f;
       --soft:#eef4ff;
       --radius:14px;
-      --header-title-grad: linear-gradient(90deg,#ff5f5f 0%, #ff3db8 50%, #7a5bff 100%);
       --container-max:980px;
     }
     *{box-sizing:border-box}
@@ -25,124 +24,51 @@
       margin:0; padding:24px;
       color:#0f1724;
       display:flex; flex-direction:column; min-height:100vh;
-      align-items:center; /* center everything horizontally */
+      align-items:center;
     }
+    .page { width:100%; max-width:var(--container-max); }
 
-    /* page container to avoid edge overflow on small screens */
-    .page {
-      width:100%;
-      max-width:var(--container-max);
-    }
-
-    /* TOP ROW (header + report card layout) */
     .top-row {
-      display:flex;
-      gap:20px;
-      align-items:flex-start;
-      margin-bottom:18px;
-      flex-wrap:wrap;
-      justify-content:center;
+      display:flex; gap:20px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; justify-content:center;
     }
 
-    /* Header: dark card with big title */
     .header-wrap {
-      background: #071025;
-      border-radius:18px;
-      padding:26px 28px;
-      color:#dbeafe;
+      background: #071025; border-radius:18px; padding:26px 28px; color:#dbeafe;
       box-shadow: 0 14px 40px rgba(2,6,23,0.45);
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      text-align:center;
-      flex: 1 1 60%;
-      min-width:260px;
-      max-width:calc(60% - 10px);
+      display:flex; flex-direction:column; align-items:center; text-align:center;
+      flex: 1 1 60%; min-width:260px; max-width:calc(60% - 10px);
     }
-
-.header-title {
-  white-space: nowrap !important;     /* ভাঙ্গা বন্ধ — এক লাইনে রাখবে */
-  overflow: visible !important;       /* ছাপা/কাটা বন্ধ */
-  text-overflow: clip !important;     /* ellipsis দেখাবে না */
-  display: inline-block !important;   /* inline block করলেই centering ঠিক থাকবে */
-  max-width: 100% !important;         /* পেরেকি হবেনা */
-  font-size: clamp(16px, 4.6vw, 36px) !important; /* responsive: মোবাইলে ছোট হবে */
-  line-height: 1 !important;
-  transform: none !important;         /* কোনো transform এ ঢেকে গেলে মুক্ত করে দেয় */
-}
-    .header-meta {
-      font-size:14px;
-      color: #9fb4d3;
-      margin-top:6px;
-      display:flex;
-      gap:10px;
-      align-items:center;
-      flex-wrap:wrap;
-      justify-content:center;
+    .header-title {
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+      display: inline-block !important;
+      max-width: 100% !important;
+      font-size: clamp(16px, 4.6vw, 36px) !important;
+      line-height: 1 !important;
+      transform: none !important;
     }
+    .header-meta { font-size:14px; color: #9fb4d3; margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
     .header-meta strong { color:#fff; font-weight:800; }
-    .team-badge {
-      margin-top:10px;
-      color:#4fb0ff;
-      font-weight:900;
-      letter-spacing:0.6px;
-      font-size:15px;
-    }
+    .team-badge { margin-top:10px; color:#4fb0ff; font-weight:900; letter-spacing:0.6px; font-size:15px; }
 
-    /* Card style used elsewhere */
-    .card {
-      background:var(--card); border-radius:var(--radius);
-      padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px;
-    }
+    .card { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px; }
+    .report-card { padding:18px; border-radius:16px; display:block; flex:1 1 36%; min-width:300px; max-width:calc(40% - 10px); }
 
-    /* Report card sits next to header on wide screens */
-    .report-card {
-      padding:18px; border-radius:16px; display:block;
-      flex:1 1 36%;
-      min-width:300px;
-      max-width:calc(40% - 10px);
-    }
-
-    /* small-screen behaviour — stack and make full width */
     @media(max-width:900px){
-      .header-wrap, .report-card {
-        max-width:100%;
-        flex-basis:100%;
-      }
-      .header-title {
-        font-size: clamp(20px, 7vw, 34px);
-        white-space: normal; /* allow wrapping on tiny screens so nothing cuts off */
-      }
+      .header-wrap, .report-card { max-width:100%; flex-basis:100%; }
+      .header-title { font-size: clamp(20px, 7vw, 34px); white-space: normal; }
     }
 
-    /* rest of UI elements (kept like previous) */
     .section-title { font-size:18px; font-weight:800; margin-bottom:6px; }
     .section-sub { color:var(--muted); margin-bottom:12px; font-size:13px; }
 
-    .radio-row {
-      display:grid;
-      grid-template-columns: repeat(1, 1fr);
-      gap:12px;
-      margin-top:6px;
-    }
-    @media(min-width:560px){
-      .radio-row { grid-template-columns: repeat(1, 1fr); } /* keep vertical for mobile-look */
-    }
-
-    .radio-pill {
-      display:flex; align-items:center; gap:10px;
-      padding:12px 18px; border-radius:999px; background:var(--soft);
-      border:1px solid transparent; font-weight:700; color:#0b1220;
-      justify-content:center;
-      min-height:48px;
-    }
+    .radio-row { display:grid; grid-template-columns: repeat(1, 1fr); gap:12px; margin-top:6px; }
+    .radio-pill { display:flex; align-items:center; gap:10px; padding:12px 18px; border-radius:999px; background:var(--soft); border:1px solid transparent; font-weight:700; color:#0b1220; justify-content:center; min-height:48px; }
     .radio-pill input{ transform:scale(1.05); margin-right:8px; }
 
     .token-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
-    .token-row input[type=text] {
-      flex:1; padding:12px 14px; border-radius:12px; border:1px solid #e8eefb;
-      background:#fbfdff; font-weight:600; color:#0b1220;
-    }
+    .token-row input[type=text] { flex:1; padding:12px 14px; border-radius:12px; border:1px solid #e8eefb; background:#fbfdff; font-weight:600; color:#0b1220; }
     .btn { cursor:pointer; border:0; padding:10px 16px; border-radius:12px; font-weight:700; }
     .btn-ghost { background:transparent; border:1px solid #cfe0ff; color:var(--blue); padding:10px 14px; border-radius:12px; }
     .btn-upload { background:transparent; border:1px solid #dfefff; color:var(--blue); padding:12px 18px; border-radius:14px; font-weight:800; }
@@ -152,14 +78,9 @@
     .target input { width:100%; padding:14px; border-radius:12px; border:1px solid #e6eef9; }
 
     .options-list { margin-top:12px; display:grid; gap:12px; }
-    .option-item {
-      display:flex; gap:12px; align-items:center; padding:14px;
-      border-radius:12px; border:1px solid #eef3fb; background:white;
-      font-weight:700; font-size:15px;
-    }
+    .option-item { display:flex; gap:12px; align-items:center; padding:14px; border-radius:12px; border:1px solid #eef3fb; background:white; font-weight:700; font-size:15px; }
     .option-item input{ width:20px; height:20px; transform:scale(1.05); }
 
-       /* cookie table */
     table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
     th, td { padding:8px 10px; border-bottom:1px solid #eef2f6; text-align:left; vertical-align:top; }
     th { background:#fbfdff; font-weight:800; font-size:13px; }
@@ -170,25 +91,15 @@
     .status-parsed { color:#374151; font-weight:700; }
     .status-error { color: #b45309; font-weight:800; }
 
-  
     .log-area { background:#000; color:#66ff99; padding:14px; border-radius:8px; height:320px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap; }
     #cookieLog { background:#0b1220; color:#9fe0ff; padding:10px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; font-size:12px; }
 
     .logs-card { padding:22px; border-radius:16px; background: linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0; box-shadow: 0 14px 40px rgba(2,6,23,0.45); margin-top:12px; }
     .log-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; font-size:18px; color:#f1d4ff; }
-    pre.log-area{
-      background:#000;
-      color:#66ff99;
-      padding:22px;
-      border-radius:12px;
-      height:360px;
-      overflow:auto;
-      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
-      font-size:15px;
-      border: 1px solid rgba(255,255,255,0.04);
-      box-shadow: inset 0 6px 20px rgba(0,0,0,0.6);
-      white-space:pre-wrap;
-    }
+    pre.log-area{ background:#000; color:#66ff99; padding:22px; border-radius:12px; height:360px; overflow:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; font-size:15px; border: 1px solid rgba(255,255,255,0.04); box-shadow: inset 0 6px 20px rgba(0,0,0,0.6); white-space:pre-wrap; }
+
+    textarea#textCookies { width:100%; min-height:120px; padding:12px; border-radius:10px; border:1px solid #e6eef9; resize:vertical; font-family:inherit; font-size:13px; }
+    input[type=file] { font-size:13px; }
 
     footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); padding:12px 0; }
 
@@ -321,7 +232,6 @@
   const autoStartCheckbox = document.getElementById('autoStart');
 
   let eventSource = null;
-  let sessionId = null;
   let lastSession = null;
 
   /* --- OPTION SETS + renderer --- */
@@ -350,16 +260,28 @@
 
   function renderOptions(type){
     const optionsBox = document.getElementById('optionsBox');
-    if(!optionsBox) return console.warn('No #optionsBox found in DOM');
+    if(!optionsBox) return;
     optionsBox.innerHTML = '';
     (OPTION_SETS[type] || []).forEach((opt, i) => {
       const id = `${type}-opt-${i}`;
       const div = document.createElement('div');
       div.className = 'option-item';
-      div.innerHTML = `<input type="checkbox" id="${id}" data-text="${opt}" /><label for="${id}">${opt}</label>`;
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = id;
+      checkbox.dataset.text = opt;
+      const label = document.createElement('label');
+      label.htmlFor = id;
+      label.textContent = opt;
+      div.appendChild(checkbox);
+      div.appendChild(label);
       optionsBox.appendChild(div);
     });
   }
+
+  // initial render of options based on selected radio
+  document.querySelectorAll('input[name=rtype]').forEach(r => r.addEventListener('change', (e) => renderOptions(e.target.value)));
+  renderOptions(document.querySelector('input[name=rtype]:checked').value);
 
   // helpers
   function nowTime(){ return new Date().toLocaleTimeString(); }
@@ -386,33 +308,30 @@
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { appendLog('Admin token missing for SSE'); return; }
     if (!sid) sid = 'default';
-    // close old
     disconnectSSE();
-    sessionId = sid;
-    const url = `/events?sessionId=${encodeURIComponent(sid)}`;
-    // append token as header not possible with EventSource; server requires requireAdmin middleware checking query OR header.
-    // Our server checks x-admin-token header OR query param; easier to include adminToken as query param if server accepts (it does).
-    const urlWithToken = url + `&adminToken=${encodeURIComponent(token)}`;
-    appendLog('Connecting SSE: ' + urlWithToken);
-    eventSource = new EventSource(urlWithToken);
+    lastSession = sid;
+    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
+    appendLog('Connecting SSE: ' + url);
+    try {
+      eventSource = new EventSource(url);
+    } catch (e) {
+      appendLog('EventSource creation failed: ' + (e && e.message));
+      return;
+    }
     eventSource.onopen = () => appendLog('SSE connected');
     eventSource.onmessage = (e) => {
       appendLog('[msg] ' + e.data);
     };
-    // listen named events
-    ['log','info','warn','error','done','success','fatal','cookieStatus'].forEach(ev=>{
+    const named = ['log','info','warn','error','done','success','fatal','cookieStatus'];
+    named.forEach(ev=>{
       eventSource.addEventListener(ev, (evt) => {
         try {
           const d = JSON.parse(evt.data);
           appendLog(`[${ev}] ${JSON.stringify(d)}`);
           if (ev === 'cookieStatus') {
-            // display in cookie log
             appendCookieLog(JSON.stringify(d));
-            // refresh list
-            fetchCookieList().catch(()=>{});
-          }
-          if (ev === 'done' || ev === 'fatal') {
-            // when job done, rpc ui will show
+            // fetch list after a small debounce to let server update index
+            setTimeout(() => fetchCookieList().catch(()=>{}), 350);
           }
         } catch(err){
           appendLog(`[${ev}] ${evt.data}`);
@@ -421,7 +340,6 @@
     });
     eventSource.onerror = (e) => {
       appendLog('SSE error/closed');
-      // don't auto reconnect too aggressively; let user re-open by starting job
     };
   }
   function disconnectSSE(){
@@ -453,12 +371,11 @@
         method:'POST',
         body: form
       });
-      const j = await res.json();
+      const j = await res.json().catch(()=>({ok:false, error:'invalid-json'}));
       uploadResult.textContent = 'Upload response: ' + JSON.stringify(j);
       appendLog('Upload finished: ' + JSON.stringify(j));
-      // connect SSE to session to see validation logs (if not yet)
+      // connect SSE to session to watch live validation logs
       connectSSE(sid);
-      lastSession = sid;
 
       // after upload, if autoStart AND target present -> start job
       if (autoStartCheckbox.checked) {
@@ -466,7 +383,6 @@
         if (!target) appendLog('Auto-start requested but target empty');
         else {
           appendLog('Auto-starting job with the uploaded cookies...');
-          // small delay to let server finish indexing
           setTimeout(() => startJob({ sessionId: sid, targetUrl: target }), 1200);
         }
       }
@@ -485,7 +401,7 @@
     if (!token) { appendLog('Cannot fetch cookie list: admin token missing'); return; }
     try {
       const r = await fetch(`/cookieList?adminToken=${encodeURIComponent(token)}`);
-      if (!r.ok) { appendLog('cookieList fetch not ok'); return; }
+      if (!r.ok) { appendLog('cookieList fetch returned non-200'); return; }
       const j = await r.json();
       if (!j || !Array.isArray(j.cookies)) { appendLog('cookieList: bad response'); return; }
       renderCookieList(j);
@@ -493,27 +409,50 @@
   }
 
   function renderCookieList(payload) {
-    const { counts, cookies } = payload;
-    summaryEl.textContent = JSON.stringify(counts);
-    cookieTableBody.innerHTML = '';
-    for (const c of cookies) {
-      const status = c.validateResult && c.validateResult.status ? c.validateResult.status : (c.isAccount ? 'parsed' : 'invalid');
-      const reason = c.validateResult && (c.validateResult.reason || c.validateResult.url) ? (c.validateResult.reason || c.validateResult.url) : '';
-      const tr = document.createElement('tr');
-      const snippetHtml = `<span class="snippet" title="${escapeHtml(c.originalLine || c.snippet || '')}">${escapeHtml(c.snippet || c.originalLine || '')}</span>`;
-      const cls = status === 'live' ? 'status-live' : status === 'invalid' ? 'status-invalid' : status === 'parsed' ? 'status-parsed' : 'status-error';
-      tr.innerHTML = `<td>${c.lineIndex}</td>
-                      <td>${snippetHtml}</td>
-                      <td class="${cls}">${escapeHtml(status)}</td>
-                      <td class="reason">${escapeHtml(reason)}</td>
-                      <td>${escapeHtml(c.parsedAt || '')}</td>`;
-      cookieTableBody.appendChild(tr);
-    }
-    appendLog('cookie list rendered: ' + cookies.length);
-  }
+    const { counts = {}, cookies = [] } = payload || {};
+    try {
+      summaryEl.textContent = JSON.stringify(counts);
+      cookieTableBody.innerHTML = '';
+      cookies.forEach(c => {
+        const tr = document.createElement('tr');
 
-  // escape helper
-  function escapeHtml(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        const tdIndex = document.createElement('td');
+        tdIndex.textContent = c.lineIndex ?? '-';
+
+        const tdSnippet = document.createElement('td');
+        const span = document.createElement('span');
+        span.className = 'snippet';
+        span.textContent = c.snippet || c.originalLine || '';
+        // use title attribute but escape automatically by property assignment
+        span.title = c.originalLine || c.snippet || '';
+        tdSnippet.appendChild(span);
+
+        const tdStatus = document.createElement('td');
+        const status = (c.validateResult && c.validateResult.status) ? c.validateResult.status : (c.isAccount ? 'parsed' : 'invalid');
+        tdStatus.textContent = status;
+        tdStatus.className = status === 'live' ? 'status-live' : status === 'invalid' ? 'status-invalid' : status === 'parsed' ? 'status-parsed' : 'status-error';
+
+        const tdReason = document.createElement('td');
+        const reasonText = (c.validateResult && (c.validateResult.reason || c.validateResult.url)) ? (c.validateResult.reason || c.validateResult.url) : '';
+        tdReason.className = 'reason';
+        tdReason.textContent = reasonText;
+
+        const tdParsedAt = document.createElement('td');
+        tdParsedAt.textContent = c.parsedAt || '';
+
+        tr.appendChild(tdIndex);
+        tr.appendChild(tdSnippet);
+        tr.appendChild(tdStatus);
+        tr.appendChild(tdReason);
+        tr.appendChild(tdParsedAt);
+
+        cookieTableBody.appendChild(tr);
+      });
+      appendLog('cookie list rendered: ' + cookies.length);
+    } catch (err) {
+      appendLog('renderCookieList error: ' + (err && err.message));
+    }
+  }
 
   // start job
   async function startJob(opts = {}) {
@@ -557,7 +496,7 @@
         headers: { 'Content-Type':'application/json', 'x-admin-token': token },
         body: JSON.stringify({ sessionId: sid })
       });
-      const j = await res.json();
+      const j = await res.json().catch(()=>({}));
       appendLog('Stop response: ' + JSON.stringify(j));
       disconnectSSE();
     } catch (e) {
@@ -577,23 +516,21 @@
     if (!confirm('Clear cookie index (removes all entries)?')) return;
     try {
       const r = await fetch('/cookieIndex/clear', { method:'POST', headers: { 'Content-Type':'application/json', 'x-admin-token': token } });
-      const j = await r.json();
+      const j = await r.json().catch(()=>({}));
       appendLog('Clear index: ' + JSON.stringify(j));
       fetchCookieList();
     } catch(e){ appendLog('clearIndex error: '+ (e && e.message)); }
   });
 
-  // auto connect small SSE at load for default session if token present
+  // auto fetch cookie list on load if token exists
   window.addEventListener('load', () => {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (token) {
-      // connect a passive SSE to default if you want logs; it's optional
-      // connectSSE('default'); // uncomment if you want passive default logs
       fetchCookieList().catch(()=>{});
     }
   });
 
-  // utility: when file picked, preload to textarea for convenience
+  // when file picked, preload to textarea for convenience
   fileInput.addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
@@ -608,7 +545,10 @@
 
   // small helper to periodically refresh cookieList when SSE not available
   setInterval(() => {
-    if (!eventSource) { /* only refresh if you want */ }
+    if (!eventSource) {
+      // only refresh when not receiving SSE events (optional)
+      // fetchCookieList().catch(()=>{});
+    }
   }, 30_000);
 
   // expose some functions for debugging
