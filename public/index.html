@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -7,93 +7,284 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
   <style>
     :root{
-      --blue:#1869ff; --muted:#9aa3b2; --card:#ffffff; --page-bg:#f4f7fb;
-      --accent:#ff4d4f; --soft:#eef4ff; --radius:14px; --container-max:1100px;
+      --blue:#1869ff;
+      --muted:#9aa3b2;
+      --card:#ffffff;
+      --page-bg:#f4f7fb;
+      --accent:#ff4d4f;
+      --soft:#eef4ff;
+      --radius:14px;
+      --header-title-grad: linear-gradient(90deg,#ff5f5f 0%, #ff3db8 50%, #7a5bff 100%);
+      --container-max:980px;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-      background:var(--page-bg); margin:0; padding:20px; color:#0f1724;
-      display:flex; flex-direction:column; min-height:100vh; align-items:center;
+      background:var(--page-bg);
+      margin:0; padding:24px;
+      color:#0f1724;
+      display:flex; flex-direction:column; min-height:100vh;
+      align-items:center; /* center everything horizontally */
     }
-    .page { width:100%; max-width:var(--container-max); }
-    .top-row { display:flex; gap:20px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; justify-content:space-between; }
+
+    /* page container to avoid edge overflow on small screens */
+    .page {
+      width:100%;
+      max-width:var(--container-max);
+    }
+
+    /* TOP ROW (header + report card layout) */
+    .top-row {
+      display:flex;
+      gap:20px;
+      align-items:flex-start;
+      margin-bottom:18px;
+      flex-wrap:wrap;
+      justify-content:center;
+    }
+
+    /* Header: dark card with big title */
     .header-wrap {
-      background:#071025; border-radius:18px; padding:20px; color:#dbeafe; box-shadow:0 14px 40px rgba(2,6,23,0.45);
-      flex:1 1 60%; min-width:260px; max-width:68%;
+      background: #071025;
+      border-radius:18px;
+      padding:26px 28px;
+      color:#dbeafe;
+      box-shadow: 0 14px 40px rgba(2,6,23,0.45);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      text-align:center;
+      flex: 1 1 60%;
+      min-width:260px;
+      max-width:calc(60% - 10px);
     }
-    .header-title { font-size:clamp(18px,3.6vw,34px); font-weight:800; margin-bottom:6px }
-    .header-meta { font-size:13px; color:#9fb4d3; display:flex; gap:8px; flex-wrap:wrap; align-items:center }
 
-    .card { background:var(--card); border-radius:var(--radius); padding:14px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px;}
-    .report-card { flex:1 1 30%; min-width:280px; max-width:30%; padding:16px; }
-    @media(max-width:980px){ .top-row { flex-direction:column } .report-card { max-width:100% } .header-wrap { max-width:100% } }
+.header-title {
+  white-space: nowrap !important;     /* ভাঙ্গা বন্ধ — এক লাইনে রাখবে */
+  overflow: visible !important;       /* ছাপা/কাটা বন্ধ */
+  text-overflow: clip !important;     /* ellipsis দেখাবে না */
+  display: inline-block !important;   /* inline block করলেই centering ঠিক থাকবে */
+  max-width: 100% !important;         /* পেরেকি হবেনা */
+  font-size: clamp(16px, 4.6vw, 36px) !important; /* responsive: মোবাইলে ছোট হবে */
+  line-height: 1 !important;
+  transform: none !important;         /* কোনো transform এ ঢেকে গেলে মুক্ত করে দেয় */
+}
+    .header-meta {
+      font-size:14px;
+      color: #9fb4d3;
+      margin-top:6px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:center;
+    }
+    .header-meta strong { color:#fff; font-weight:800; }
+    .team-badge {
+      margin-top:10px;
+      color:#4fb0ff;
+      font-weight:900;
+      letter-spacing:0.6px;
+      font-size:15px;
+    }
 
-    .section-title { font-size:16px; font-weight:800; margin-bottom:6px; }
-    .radio-pill { display:flex; gap:8px; align-items:center; padding:8px 12px; border-radius:999px; background:var(--soft); border:1px solid #e9f0ff; font-weight:700; cursor:pointer; }
-    .token-row { display:flex; gap:10px; align-items:center; margin-top:8px; }
-    input[type=text], textarea { padding:10px; border-radius:10px; border:1px solid #e6eef9; font-size:14px; width:100%; box-sizing:border-box; }
-    textarea { min-height:100px; resize:vertical; }
-    .btn { cursor:pointer; border:0; padding:10px 14px; border-radius:10px; font-weight:700; }
-    .btn-ghost { background:transparent; border:1px solid #cfe0ff; color:var(--blue); }
-    .btn-upload { background:transparent; border:1px solid #dfefff; color:var(--blue); }
-    .btn-start { background:var(--blue); color:#fff; }
-    .btn-stop { background:var(--accent); color:#fff; }
+    /* Card style used elsewhere */
+    .card {
+      background:var(--card); border-radius:var(--radius);
+      padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px;
+    }
 
-    /* cookie table */
-    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
-    th, td { padding:8px 10px; border-bottom:1px solid #eef2f6; text-align:left; vertical-align:top; }
-    th { background:#fbfdff; font-weight:800; font-size:13px; }
-    .snippet { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
-    .reason { max-width:280px; word-break:break-all; font-size:12px; color:#333; }
-    .status-live { color: #059669; font-weight:800; }
-    .status-invalid { color:#dc2626; font-weight:800; }
-    .status-parsed { color:#374151; font-weight:700; }
-    .status-error { color: #b45309; font-weight:800; }
+    /* Report card sits next to header on wide screens */
+    .report-card {
+      padding:18px; border-radius:16px; display:block;
+      flex:1 1 36%;
+      min-width:300px;
+      max-width:calc(40% - 10px);
+    }
 
-    .logs-card { padding:18px; border-radius:12px; background:#071322; color:#cfeee0; margin-top:12px; }
-    .log-area { background:#000; color:#66ff99; padding:14px; border-radius:8px; height:320px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap; }
-    #cookieLog { background:#0b1220; color:#9fe0ff; padding:10px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; font-size:12px; }
+    /* small-screen behaviour — stack and make full width */
+    @media(max-width:900px){
+      .header-wrap, .report-card {
+        max-width:100%;
+        flex-basis:100%;
+      }
+      .header-title {
+        font-size: clamp(20px, 7vw, 34px);
+        white-space: normal; /* allow wrapping on tiny screens so nothing cuts off */
+      }
+    }
 
-    .small { font-size:12px; color:var(--muted); }
-    footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); }
+    /* rest of UI elements (kept like previous) */
+    .section-title { font-size:18px; font-weight:800; margin-bottom:6px; }
+    .section-sub { color:var(--muted); margin-bottom:12px; font-size:13px; }
+
+    .radio-row {
+      display:grid;
+      grid-template-columns: repeat(1, 1fr);
+      gap:12px;
+      margin-top:6px;
+    }
+    @media(min-width:560px){
+      .radio-row { grid-template-columns: repeat(1, 1fr); } /* keep vertical for mobile-look */
+    }
+
+    .radio-pill {
+      display:flex; align-items:center; gap:10px;
+      padding:12px 18px; border-radius:999px; background:var(--soft);
+      border:1px solid transparent; font-weight:700; color:#0b1220;
+      justify-content:center;
+      min-height:48px;
+    }
+    .radio-pill input{ transform:scale(1.05); margin-right:8px; }
+
+    .token-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+    .token-row input[type=text] {
+      flex:1; padding:12px 14px; border-radius:12px; border:1px solid #e8eefb;
+      background:#fbfdff; font-weight:600; color:#0b1220;
+    }
+    .btn { cursor:pointer; border:0; padding:10px 16px; border-radius:12px; font-weight:700; }
+    .btn-ghost { background:transparent; border:1px solid #cfe0ff; color:var(--blue); padding:10px 14px; border-radius:12px; }
+    .btn-upload { background:transparent; border:1px solid #dfefff; color:var(--blue); padding:12px 18px; border-radius:14px; font-weight:800; }
+    .btn-start { background:var(--blue); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 14px 36px rgba(24,105,255,0.14); }
+    .btn-stop { background:var(--accent); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 12px 28px rgba(255,77,79,0.12); }
+
+    .target input { width:100%; padding:14px; border-radius:12px; border:1px solid #e6eef9; }
+
+    .options-list { margin-top:12px; display:grid; gap:12px; }
+    .option-item {
+      display:flex; gap:12px; align-items:center; padding:14px;
+      border-radius:12px; border:1px solid #eef3fb; background:white;
+      font-weight:700; font-size:15px;
+    }
+    .option-item input{ width:20px; height:20px; transform:scale(1.05); }
+
+    .logs-card { padding:22px; border-radius:16px; background: linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0; box-shadow: 0 14px 40px rgba(2,6,23,0.45); margin-top:12px; }
+    .log-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; font-size:18px; color:#f1d4ff; }
+    pre.log-area{
+      background:#000;
+      color:#66ff99;
+      padding:22px;
+      border-radius:12px;
+      height:360px;
+      overflow:auto;
+      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+      font-size:15px;
+      border: 1px solid rgba(255,255,255,0.04);
+      box-shadow: inset 0 6px 20px rgba(0,0,0,0.6);
+      white-space:pre-wrap;
+    }
+
+    footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); padding:12px 0; }
+
+    /* ====== NEW: truncate & modal styles for cookie table ====== */
+    #cookieTable { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+    #cookieTable th, #cookieTable td { padding:8px 6px; border-bottom:1px solid #eef3fb; text-align:left; vertical-align:top; }
+    #cookieTable td.snippet {
+      max-width: 320px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+      font-size: 12px;
+    }
+    #cookieTable td.reason {
+      max-width: 360px;
+      word-break: break-word;
+      font-size: 12px;
+      color: #444;
+    }
+    #cookieTable td.action { width:110px; }
+
+    @media (max-width: 720px) {
+      #cookieTable td.snippet { max-width: 160px; font-size:11px; }
+      #cookieTable td.reason { max-width: 180px; font-size:11px; }
+    }
+
+    /* modal */
+    #fullViewModal {
+      position: fixed;
+      left:0; top:0; right:0; bottom:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background: rgba(4,6,11,0.6);
+      z-index: 9999;
+    }
+    #fullViewModal .modal-body {
+      background: #fff;
+      color: #0b1220;
+      max-width: 92%;
+      max-height: 84%;
+      overflow:auto;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 12px 40px rgba(2,6,23,0.4);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+    #fullViewModal .modal-close {
+      float: right;
+      cursor: pointer;
+      background: #ef4444;
+      color: #fff;
+      border-radius:6px;
+      padding:6px 10px;
+      border:0;
+    }
+    .btn-view-full {
+      background: transparent;
+      border: 1px solid #e6eef6;
+      color: #0b1220;
+      padding: 6px 8px;
+      font-size:12px;
+      border-radius:6px;
+      cursor:pointer;
+    }
   </style>
 </head>
 <body>
   <div class="page">
     <div class="top-row">
-      <div class="header-wrap card" role="banner">
+      <div class="header-wrap" role="banner" aria-label="Application header">
         <div class="header-title">⚡ Facebook Auto Report Tool ⚡</div>
-        <div class="header-meta">
-          <div>👤 Author: <strong>PRAVAS BERA</strong></div>
-          <div>|</div>
-          <div>🌍 Version: <strong>Premium</strong></div>
+        <div class="header-meta" role="list">
+          <div role="listitem">👤 Author: <strong>PRAVAS BERA</strong></div>
+          <div role="separator">|</div>
+          <div role="listitem">🌍 Version: <strong>Premium</strong></div>
+          <div role="separator">|</div>
+          <div role="listitem">🇮🇳 Country: <strong>INDIA</strong></div>
         </div>
-        <div class="small" style="margin-top:8px">⚠️ Make sure server `ADMIN_TOKEN` is set and server endpoints are reachable.</div>
+        <div class="team-badge">🔥 INDIAN DANGER OF BULLET TEAM 🔥</div>
       </div>
 
-      <div class="report-card card" role="region">
-        <div class="section-title">Report / Target</div>
-        <div class="small">Choose report type and set target URL/ID (used when auto-starting).</div>
-        <div style="margin-top:8px; display:flex; gap:8px; flex-direction:column;">
+      <div class="card report-card" role="region" aria-label="Choose report type">
+        <div>
+          <div class="section-title">Choose Report Type</div>
+          <div class="section-sub">Select the object you want to report — options will change accordingly.</div>
+        </div>
+
+        <div class="radio-row" role="radiogroup" aria-label="Report type">
           <label class="radio-pill"><input type="radio" name="rtype" value="profile" checked> Profile</label>
           <label class="radio-pill"><input type="radio" name="rtype" value="page"> Page</label>
           <label class="radio-pill"><input type="radio" name="rtype" value="post"> Post</label>
         </div>
-        <div style="margin-top:10px">
-          <label style="font-weight:800; display:block; margin-bottom:6px">Target URL / ID</label>
-          <input id="target" type="text" placeholder="https://facebook.com/..." />
+
+        <div class="target" style="margin-top:14px;">
+          <label style="font-weight:800; display:block; margin-bottom:8px;">Target URL / ID</label>
+          <input id="target" type="text" placeholder="https://facebook.com/..." aria-label="Target URL or ID" />
         </div>
 
-        <div style="margin-top:12px">
-          <div style="font-weight:800; margin-bottom:6px">Admin Token</div>
-          <div class="token-row">
-            <input id="adminToken" type="text" placeholder="x-admin-token" />
-            <button id="saveToken" class="btn btn-ghost">Save</button>
-          </div>
-          <div class="small" style="margin-top:6px">Token stored locally (localStorage) and sent on API calls.</div>
-        </div>
+        <div id="optionsBox" class="options-list" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="card" aria-labelledby="token-label">
+      <label id="token-label" style="font-weight:800; display:block; margin-bottom:8px;">Enter Admin Token here (x-admin-token)</label>
+      <div class="token-row">
+        <input id="adminToken" type="text" placeholder="x-admin-token" aria-label="Admin token" />
+        <button id="saveToken" class="btn-ghost btn">Save</button>
       </div>
     </div>
 
@@ -182,6 +373,43 @@
   let eventSource = null;
   let sessionId = null;
   let lastSession = null;
+
+  /* --- OPTION SETS + renderer --- */
+  const OPTION_SETS = {
+    profile: [
+      'Problem involving someone under 18',
+      'Bullying, harassment or abuse',
+      'Violent, hateful or disturbing content',
+      'Adult content',
+      'Fake profile'
+    ],
+    page: [
+      'Problem involving someone under 18',
+      'Bullying, harassment or abuse',
+      'Violent, hateful or disturbing content',
+      'Adult content',
+      'Fake page'
+    ],
+    post: [
+      'Problem involving someone under 18',
+      'Bullying, harassment or abuse',
+      'Violent, hateful or disturbing content',
+      'Adult content'
+    ]
+  };
+
+  function renderOptions(type){
+    const optionsBox = document.getElementById('optionsBox');
+    if(!optionsBox) return console.warn('No #optionsBox found in DOM');
+    optionsBox.innerHTML = '';
+    (OPTION_SETS[type] || []).forEach((opt, i) => {
+      const id = `${type}-opt-${i}`;
+      const div = document.createElement('div');
+      div.className = 'option-item';
+      div.innerHTML = `<input type="checkbox" id="${id}" data-text="${opt}" /><label for="${id}">${opt}</label>`;
+      optionsBox.appendChild(div);
+    });
+  }
 
   // helpers
   function nowTime(){ return new Date().toLocaleTimeString(); }
