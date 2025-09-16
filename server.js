@@ -619,10 +619,55 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
     COOKIE_INDEX.counts = { total:0, live:0, invalid:0, parsed:0, error:0 };
     saveCookieIndex();
 
-    function makeSnippet(line, max=120) {
-      if (!line) return '';
-      return line.length > max ? (line.slice(0, max) + '...') : line;
+    // replace existing makeSnippet / snippet creation logic inside uploadCookies handler with this
+
+function makeSnippetFromKv(line, kv) {
+  // prefer showing account id (c_user) and masked xs if available
+  try {
+    if (kv && (kv.c_user || kv.cuserid || kv.cuser)) {
+      const id = (kv.c_user || kv.cuserid || kv.cuser || '').toString();
+      const shortId = id.length > 8 ? id.slice(0, 6) + '...' : id;
+      let xsVal = kv.xs || kv.XS || kv.Xs || kv['xs'];
+      if (xsVal) {
+        xsVal = xsVal.toString();
+        const end = xsVal.length > 6 ? xsVal.slice(-4) : xsVal;
+        return `acct:${shortId}, xs:••••${end}`;
+      }
+      return `acct:${shortId}`;
     }
+
+    // if there's an 'id' or 'uid' field, show that
+    if (kv && (kv.id || kv.uid)) {
+      const id = (kv.id || kv.uid).toString();
+      return `id:${ id.length > 8 ? id.slice(0,6) + '...' : id }`;
+    }
+
+    // fallback: show a short fingerprint (sha1 hex) to uniquely identify line without leaking full contents
+    const crypto = require('crypto');
+    const h = crypto.createHash('sha1').update(line || '').digest('hex').slice(0,8);
+    return `line#${h}`;
+  } catch (e) {
+    // final fallback: trimmed line start
+    if (!line) return '';
+    return line.length > 60 ? line.slice(0, 40) + '...' : line;
+  }
+}
+
+// inside your for-loop that iterates lines, replace snippet creation with:
+const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(l);
+const snippet = makeSnippetFromKv(l, kv);
+const summary = { lineIndex: i+1, snippet, hasCUser, hasXs, isAccount };
+
+// and when storing originalLine we still keep full content (if you want). Otherwise you can omit originalLine
+const entry = {
+  lineIndex: i+1,
+  // keep original if you want full data on detail endpoint; or remove to avoid storing secrets
+  originalLine: l,
+  snippet,
+  hasCUser, hasXs, isAccount,
+  parsedAt: (new Date()).toISOString(),
+  validateResult: result
+};
 
     let parsedCount = 0;
     for (let i=0;i<lines.length;i++) {
