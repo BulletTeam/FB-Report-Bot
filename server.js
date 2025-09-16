@@ -72,10 +72,9 @@ async function resolveExecutablePath() {
 }
 
 async function launchBrowserWithFallback(opts = {}) {
-  // Playwright manages browser downloads itself by default.
   const execPath = await resolveExecutablePath();
   const launchOpts = {
-    headless: true,
+    headless: typeof opts.headless === 'boolean' ? opts.headless : true,
     args: (opts.args || []).concat([
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -148,15 +147,12 @@ async function quickValidateCookie(cookies, sessionId) {
   const start = Date.now();
   try {
     browser = await launchBrowserWithFallback({ defaultViewport: { width:360, height:800 } });
-    // create context with mobile-like viewport & UA
     context = await browser.newContext({
       viewport: { width: 360, height: 800 },
       userAgent: 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
     });
     page = await context.newPage();
 
-    // Playwright expects cookies with "expires" maybe, but minimal form works.
-    // Ensure domain values are valid (no leading protocol)
     const pwCookies = cookies.map(c => {
       return {
         name: c.name,
@@ -169,7 +165,6 @@ async function quickValidateCookie(cookies, sessionId) {
       };
     });
 
-    // Visit first to establish origin (Playwright requires url when adding cookies)
     await page.goto('https://m.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
     try {
       await context.addCookies(pwCookies);
@@ -178,7 +173,6 @@ async function quickValidateCookie(cookies, sessionId) {
       return { status: 'error', reason: 'cookie-set-failed' };
     }
 
-    // reload to apply cookies
     await page.goto('https://m.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
     await page.waitForTimeout(1000);
 
@@ -311,7 +305,7 @@ function loadCookieAccountsFromFile() {
   return out;
 }
 
-// click helpers (unchanged)
+// click helpers
 async function tryClickCss(page, sel, timeout = 3000) {
   try {
     await page.waitForSelector(sel, { timeout });
@@ -362,6 +356,35 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
       sseSend(sessionId, 'log', { step: label, ok: true });
     }
     await new Promise(r => setTimeout(r, perActionDelay + Math.floor(Math.random()*350)));
+  }
+}
+
+// helper to make a compact snippet (non-sensitive)
+function makeSnippetFromKv(line, kv) {
+  try {
+    if (kv && (kv.c_user || kv.cuserid || kv.cuser)) {
+      const id = (kv.c_user || kv.cuserid || kv.cuser || '').toString();
+      const shortId = id.length > 8 ? id.slice(0, 6) + '...' : id;
+      let xsVal = kv.xs || kv.XS || kv.Xs || kv['xs'];
+      if (xsVal) {
+        xsVal = xsVal.toString();
+        const end = xsVal.length > 6 ? xsVal.slice(-4) : xsVal;
+        return `acct:${shortId}, xs:••••${end}`;
+      }
+      return `acct:${shortId}`;
+    }
+
+    if (kv && (kv.id || kv.uid)) {
+      const id = (kv.id || kv.uid).toString();
+      return `id:${ id.length > 8 ? id.slice(0,6) + '...' : id }`;
+    }
+
+    const crypto = require('crypto');
+    const h = crypto.createHash('sha1').update(line || '').digest('hex').slice(0,8);
+    return `line#${h}`;
+  } catch (e) {
+    if (!line) return '';
+    return line.length > 60 ? line.slice(0, 40) + '...' : line;
   }
 }
 
@@ -425,14 +448,12 @@ async function reportRunner(sessionId, opts = {}) {
           sseSend(sessionId,'info',{msg:'Browser restarted to avoid memory leak'});
         }
 
-        // create context with UA
         context = await browser.newContext({
           viewport: opts.defaultViewport || { width:390, height:844 },
           userAgent: 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
         });
         page = await context.newPage();
 
-        // keep track for cleanup & debug endpoints
         sess.contexts.push(context);
         sess.pages.push(page);
         sess.currentContext = context;
@@ -440,7 +461,6 @@ async function reportRunner(sessionId, opts = {}) {
 
         simpleLog('page-created-for-account', accId);
 
-        // safe cookies mapping for playwright
         const pwCookies = accountCookies.map(c => ({
           name: c.name,
           value: String(c.value),
@@ -451,7 +471,6 @@ async function reportRunner(sessionId, opts = {}) {
           sameSite: c.sameSite || 'Lax'
         }));
 
-        // open base and add cookies
         await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
         if (pwCookies.length) {
           try {
@@ -590,7 +609,9 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
   const sessionId = req.query.sessionId || req.body.sessionId || 'default';
   if (uploadLock) return res.status(409).json({ ok:false, message:'Another upload in progress' });
   uploadLock = true;
+
   try {
+    // read raw content from uploaded file OR body.text
     let raw = '';
     if (req.file) {
       const target = path.join(UPLOAD_DIR, 'cookies.txt');
@@ -608,205 +629,110 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
       return res.status(400).json({ ok:false, message:'No file or text' });
     }
 
-    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    // split into non-empty lines
+    const lines = raw.split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
     if (!lines.length) {
       sseSend(sessionId, 'warn', { msg: 'No cookie lines found in file' });
       uploadLock = false;
       return res.json({ ok:true, parsed: 0 });
     }
 
+    // reset index
     COOKIE_INDEX.cookies = [];
     COOKIE_INDEX.counts = { total:0, live:0, invalid:0, parsed:0, error:0 };
     saveCookieIndex();
 
-    // replace existing makeSnippet / snippet creation logic inside uploadCookies handler with this
+    let parsedCount = 0;
 
-function makeSnippetFromKv(line, kv) {
-  // prefer showing account id (c_user) and masked xs if available
-  try {
-    if (kv && (kv.c_user || kv.cuserid || kv.cuser)) {
-      const id = (kv.c_user || kv.cuserid || kv.cuser || '').toString();
-      const shortId = id.length > 8 ? id.slice(0, 6) + '...' : id;
-      let xsVal = kv.xs || kv.XS || kv.Xs || kv['xs'];
-      if (xsVal) {
-        xsVal = xsVal.toString();
-        const end = xsVal.length > 6 ? xsVal.slice(-4) : xsVal;
-        return `acct:${shortId}, xs:••••${end}`;
-      }
-      return `acct:${shortId}`;
-    }
-
-    // if there's an 'id' or 'uid' field, show that
-    if (kv && (kv.id || kv.uid)) {
-      const id = (kv.id || kv.uid).toString();
-      return `id:${ id.length > 8 ? id.slice(0,6) + '...' : id }`;
-    }
-
-    // fallback: show a short fingerprint (sha1 hex) to uniquely identify line without leaking full contents
-    const crypto = require('crypto');
-    const h = crypto.createHash('sha1').update(line || '').digest('hex').slice(0,8);
-    return `line#${h}`;
-  } catch (e) {
-    // final fallback: trimmed line start
-    if (!line) return '';
-    return line.length > 60 ? line.slice(0, 40) + '...' : line;
-  }
-}
-
-// inside your for-loop that iterates lines, replace snippet creation with:
-const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(l);
-const snippet = makeSnippetFromKv(l, kv);
-const summary = { lineIndex: i+1, snippet, hasCUser, hasXs, isAccount };
-
-// and when storing originalLine we still keep full content (if you want). Otherwise you can omit originalLine
-const entry = {
-  lineIndex: i+1,
-  // keep original if you want full data on detail endpoint; or remove to avoid storing secrets
-  originalLine: l,
-  snippet,
-  hasCUser, hasXs, isAccount,
-  parsedAt: (new Date()).toISOString(),
-  validateResult: result
-};
-
-// inside your uploadCookies handler, replace the processing loop with this:
-
-let parsedCount = 0;
-
-for (let i = 0; i < lines.length; i++) {
-  const line = lines[i];
-  try {
-    const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
-    const snippet = makeSnippet(line, 120);
-    const summary = { lineIndex: i + 1, snippet, hasCUser, hasXs, isAccount };
-
-    if (!isAccount) {
-      sseSend(sessionId, 'cookieStatus', { status: 'invalid', reason: 'missing c_user/xs', ...summary });
-      const entry = {
-        lineIndex: i + 1, originalLine: line, snippet,
-        hasCUser, hasXs, isAccount,
-        parsedAt: (new Date()).toISOString(),
-        validateResult: { status: 'invalid', reason: 'missing c_user/xs' }
-      };
-      COOKIE_INDEX.cookies.push(entry);
-      saveCookieIndex();
-      continue;
-    }
-
-    parsedCount++;
-    sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
-
-    const cookieObjects = [];
-    for (const [k, v] of Object.entries(kv)) {
-      if (k && v !== undefined) {
-        cookieObjects.push({ name: k, value: v, domain: '.facebook.com', path: '/', httpOnly: false, secure: true });
-      }
-    }
-
-    sseSend(sessionId, 'log', { msg: `Validating account line ${i+1}` });
-
-    let result = { status: 'parsed', reason: 'validation-skipped' };
-    if (VALIDATE_COOKIES) {
+    // iterate lines
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       try {
-        result = await quickValidateCookie(cookieObjects, sessionId);
-      } catch (err) {
-        result = { status: 'error', reason: err && err.message ? err.message : String(err) };
-      }
-    } else {
-      result = { status: 'parsed', reason: 'validation-disabled' };
-    }
+        const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
+        // makeSnippetFromKv is defined above in your file; fall back to simple mask if not present
+        const snippet = (typeof makeSnippetFromKv === 'function') ? makeSnippetFromKv(line, kv) : (line.length > 60 ? line.slice(0,40) + '...' : line);
+        const summary = { lineIndex: i + 1, snippet, hasCUser, hasXs, isAccount };
 
-    // emit appropriate SSE
-    if (result.status === 'live') {
-      sseSend(sessionId, 'cookieStatus', { status: 'live', lineIndex: i + 1, reason: result.reason, url: result.url || null });
-    } else if (result.status === 'invalid') {
-      sseSend(sessionId, 'cookieStatus', { status: 'invalid', lineIndex: i + 1, reason: result.reason, url: result.url || null });
-    } else if (result.status === 'parsed') {
-      sseSend(sessionId, 'cookieStatus', { status: 'parsed', lineIndex: i + 1, reason: result.reason });
-    } else {
-      sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: result.reason });
-    }
-
-    const entry = {
-      lineIndex: i + 1,
-      originalLine: line,
-      snippet,
-      hasCUser, hasXs, isAccount,
-      parsedAt: (new Date()).toISOString(),
-      validateResult: result
-    };
-    COOKIE_INDEX.cookies.push(entry);
-    saveCookieIndex();
-
-    // polite gap
-    await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
-
-  } catch (lineErr) {
-    // log the per-line error but don't reference any outer variable named `l`
-    simpleLog('uploadCookies-line-error', { lineIndex: i + 1, error: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
-    sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
-
-    // still store an index entry so UI sees it
-    COOKIE_INDEX.cookies.push({
-      lineIndex: i + 1,
-      originalLine: line,
-      snippet: makeSnippet(line, 120),
-      hasCUser: false,
-      hasXs: false,
-      isAccount: false,
-      parsedAt: (new Date()).toISOString(),
-      validateResult: { status: 'error', reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) }
-    });
-    saveCookieIndex();
-    // continue to next line
-    continue;
-  }
-}
-
-      parsedCount++;
-      sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
-
-      const cookieObjects = [];
-      for (const [k,v] of Object.entries(kv)) {
-        if (k && v !== undefined) {
-          cookieObjects.push({ name:k, value:v, domain:'.facebook.com', path:'/', httpOnly:false, secure:true });
+        if (!isAccount) {
+          sseSend(sessionId, 'cookieStatus', { status: 'invalid', reason: 'missing c_user/xs', ...summary });
+          const entryObj = {
+            lineIndex: i + 1,
+            originalLine: line,
+            snippet,
+            hasCUser, hasXs, isAccount,
+            parsedAt: (new Date()).toISOString(),
+            validateResult: { status: 'invalid', reason: 'missing c_user/xs' }
+          };
+          COOKIE_INDEX.cookies.push(entryObj);
+          saveCookieIndex();
+          continue;
         }
-      }
 
-      sseSend(sessionId, 'log', { msg: `Validating account line ${i+1}` });
-      let result = { status:'parsed', reason:'validation-skipped' };
-      if (VALIDATE_COOKIES) {
-        try {
-          result = await quickValidateCookie(cookieObjects, sessionId);
-        } catch (err) {
-          result = { status:'error', reason: err && err.message ? err.message : String(err) };
+        parsedCount++;
+        sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
+
+        // build cookie objects for Playwright
+        const cookieObjects = [];
+        for (const [k, v] of Object.entries(kv || {})) {
+          if (k && v !== undefined) {
+            cookieObjects.push({ name: k, value: String(v), domain: '.facebook.com', path: '/', httpOnly: false, secure: true });
+          }
         }
-      } else {
-        result = { status:'parsed', reason:'validation-disabled' };
+
+        sseSend(sessionId, 'log', { msg: `Validating account line ${i+1}` });
+
+        let result = { status: 'parsed', reason: 'validation-skipped' };
+        if (VALIDATE_COOKIES) {
+          try {
+            result = await quickValidateCookie(cookieObjects, sessionId);
+          } catch (err) {
+            result = { status: 'error', reason: err && err.message ? err.message : String(err) };
+          }
+        } else {
+          result = { status: 'parsed', reason: 'validation-disabled' };
+        }
+
+        // emit SSE based on result
+        if (result.status === 'live') {
+          sseSend(sessionId, 'cookieStatus', { status: 'live', lineIndex: i + 1, reason: result.reason, url: result.url || null });
+        } else if (result.status === 'invalid') {
+          sseSend(sessionId, 'cookieStatus', { status: 'invalid', lineIndex: i + 1, reason: result.reason, url: result.url || null });
+        } else if (result.status === 'parsed') {
+          sseSend(sessionId, 'cookieStatus', { status: 'parsed', lineIndex: i + 1, reason: result.reason });
+        } else {
+          sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: result.reason });
+        }
+
+        const entryObj = {
+          lineIndex: i + 1,
+          originalLine: line,
+          snippet,
+          hasCUser, hasXs, isAccount,
+          parsedAt: (new Date()).toISOString(),
+          validateResult: result
+        };
+        COOKIE_INDEX.cookies.push(entryObj);
+        saveCookieIndex();
+
+        // polite gap between validations
+        await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
+      } catch (lineErr) {
+        simpleLog('uploadCookies-line-error', { lineIndex: i + 1, error: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
+        sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
+
+        COOKIE_INDEX.cookies.push({
+          lineIndex: i + 1,
+          originalLine: line,
+          snippet: (line.length > 60 ? line.slice(0,40) + '...' : line),
+          hasCUser: false,
+          hasXs: false,
+          isAccount: false,
+          parsedAt: (new Date()).toISOString(),
+          validateResult: { status: 'error', reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) }
+        });
+        saveCookieIndex();
+        continue;
       }
-
-      if (result.status === 'live') {
-        sseSend(sessionId, 'cookieStatus', { status: 'live', lineIndex:i+1, reason: result.reason, url: result.url || null });
-      } else if (result.status === 'invalid') {
-        sseSend(sessionId, 'cookieStatus', { status: 'invalid', lineIndex:i+1, reason: result.reason, url: result.url || null });
-      } else if (result.status === 'parsed') {
-        sseSend(sessionId, 'cookieStatus', { status: 'parsed', lineIndex:i+1, reason: result.reason });
-      } else {
-        sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex:i+1, reason: result.reason });
-      }
-
-      const entry = {
-        lineIndex: i+1,
-        originalLine: l,
-        snippet,
-        hasCUser, hasXs, isAccount,
-        parsedAt: (new Date()).toISOString(),
-        validateResult: result
-      };
-      COOKIE_INDEX.cookies.push(entry);
-      saveCookieIndex();
-
-      await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random()*400)));
     }
 
     sseSend(sessionId, 'log', { msg:`Parsed ${parsedCount} account cookie(s)` });
