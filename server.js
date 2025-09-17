@@ -322,21 +322,34 @@ async function tryClickXpath(page, sel, timeout = 3000) {
   } catch (e) { return false; }
 }
 
-// Replace your existing runFlowOnPage with this prefix-aware implementation
+// Playwright-compatible runFlowOnPage
 async function runFlowOnPage(page, flowSteps, opts = {}) {
   const { sessionId='default', perActionDelay=1100, actionTimeout=12000 } = opts;
 
-  // helper: click element handle safely
+  // Robust click helper: accepts Locator or ElementHandle
   async function clickHandle(handle, timeout = 3000) {
     try {
-      await handle.click({ timeout });
-      return true;
-    } catch (e) {
-      try {
-        // fallback: evaluate and call click via DOM
-        await page.evaluate(el => el.click && el.click(), handle);
+      // Playwright Locator has click(); ElementHandle has click(); try direct
+      if (typeof handle.click === 'function') {
+        await handle.click({ timeout, force: true }).catch(async () => {
+          // sometimes locator.click may fail due to interceptors — fallback to evaluate
+          await page.evaluate(el => (el && el.click && el.click()), handle);
+        });
         return true;
-      } catch (_) { return false; }
+      } else {
+        // fallback: evaluate click on DOM node (handle might be a JSHandle)
+        await page.evaluate(el => el && el.click && el.click(), handle);
+        return true;
+      }
+    } catch (e) {
+      // last resort: try locator-based clicking if handle.selector is available
+      try {
+        if (handle && handle._selector) {
+          await page.locator(handle._selector).click({ timeout, force: true });
+          return true;
+        }
+      } catch (_) {}
+      return false;
     }
   }
 
@@ -352,76 +365,111 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     for (const rawSel of sels) {
       if (!rawSel) continue;
       const sel = String(rawSel).trim();
-
       try {
+        // 1) css:...
         if (/^css:/.test(sel)) {
-          const css = sel.replace(/^css:/, '');
+          const css = sel.replace(/^css:/, '').trim();
           try {
             await page.waitForSelector(css, { timeout: Math.min(actionTimeout, 5000) });
-            await page.click(css, { timeout: Math.min(actionTimeout, 5000), force: true });
+            await page.locator(css).first().click({ timeout: Math.min(actionTimeout, 5000), force: true });
             success = true;
-          } catch (e) {
-            lastErr = e;
-            success = false;
+          } catch (e) { lastErr = e; success = false; }
+
+        // 2) xpath:...
+        } else if (/^xpath:/.test(sel)) {
+          const xp = sel.replace(/^xpath:/, '').trim();
+          try {
+            // Playwright supports 'xpath=' prefix for selectors
+            await page.waitForSelector(`xpath=${xp}`, { timeout: Math.min(actionTimeout, 5000) });
+            const locator = page.locator(`xpath=${xp}`).first();
+            success = await (async () => {
+              try { await locator.click({ timeout: Math.min(actionTimeout, 5000), force: true }); return true; }
+              catch (e) {
+                // try element handle then fallback click
+                try {
+                  const handle = await locator.elementHandle();
+                  if (handle) return await clickHandle(handle, Math.min(actionTimeout,5000));
+                } catch(_) {}
+                return false;
+              }
+            })();
+          } catch (e) { lastErr = e; success = false; }
+
+        // 3) text:...
+        } else if (/^text:/.test(sel)) {
+          let txt = sel.replace(/^text:/, '').trim();
+          if (!txt) { lastErr = new Error('empty-text-selector'); success = false; }
+          else {
+            // try Playwright's getByText (case-insensitive-ish) first
+            try {
+              // Use exact:false so partial matches will work
+              const byText = page.getByText(txt, { exact: false });
+              // wait for it
+              await byText.first().waitFor({ timeout: Math.min(actionTimeout, 5000) });
+              await byText.first().click({ timeout: Math.min(actionTimeout, 5000), force: true });
+              success = true;
+            } catch (e) {
+              // fallback: case-insensitive XPath using translate()
+              try {
+                const txtEsc = txt.replace(/'/g, `"`); // crude escaping
+                const lower = txt.toLowerCase();
+                // use translate() to normalize to lowercase for case-insensitive contains
+                const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '${lower}')]`;
+                await page.waitForSelector(`xpath=${xp}`, { timeout: Math.min(actionTimeout, 5000) });
+                const loc = page.locator(`xpath=${xp}`).first();
+                try { await loc.click({ timeout: Math.min(actionTimeout, 5000), force: true }); success = true; }
+                catch (e2) {
+                  const handle = await loc.elementHandle();
+                  if (handle) success = await clickHandle(handle, Math.min(actionTimeout,5000));
+                }
+              } catch (e3) { lastErr = e3; success = false; }
+            }
           }
 
-        } else if (/^xpath:/.test(sel)) {
-          const xp = sel.replace(/^xpath:/, '');
-          try {
-            await page.waitForXPath(xp, { timeout: Math.min(actionTimeout, 5000) });
-            const els = await page.$x(xp);
-            if (els && els.length) {
-              success = await clickHandle(els[0], Math.min(actionTimeout, 5000));
-            } else success = false;
-          } catch (e) { lastErr = e; success = false; }
-
-        } else if (/^text:/.test(sel)) {
-          const txt = sel.replace(/^text:/,'').trim().replace(/'/g, "\\'");
-          // XPath that searches for text node containing phrase (case-insensitive-ish via translate)
-          const xp = `//*[contains(normalize-space(string(.)),'${txt}')]`;
-          try {
-            await page.waitForXPath(xp, { timeout: Math.min(actionTimeout, 5000) });
-            const els = await page.$x(xp);
-            if (els && els.length) {
-              success = await clickHandle(els[0], Math.min(actionTimeout, 5000));
-            } else success = false;
-          } catch (e) { lastErr = e; success = false; }
-
+        // 4) no prefix: try css -> xpath -> text
         } else {
-          // no prefix: try css -> xpath -> text
+          // try as CSS
           try {
             await page.waitForSelector(sel, { timeout: Math.min(actionTimeout, 3000) });
-            await page.click(sel, { timeout: Math.min(actionTimeout, 3000), force: true });
+            await page.locator(sel).first().click({ timeout: Math.min(actionTimeout, 3000), force: true });
             success = true;
           } catch (_) {
+            // try as XPath
             try {
               const xp = sel;
-              await page.waitForXPath(xp, { timeout: Math.min(actionTimeout, 3000) });
-              const els = await page.$x(xp);
-              if (els && els.length) success = await clickHandle(els[0], Math.min(actionTimeout, 3000));
+              await page.waitForSelector(`xpath=${xp}`, { timeout: Math.min(actionTimeout, 3000) });
+              const loc = page.locator(`xpath=${xp}`).first();
+              try { await loc.click({ timeout: Math.min(actionTimeout, 3000), force: true }); success = true; }
+              catch (e) {
+                const handle = await loc.elementHandle();
+                if (handle) success = await clickHandle(handle, Math.min(actionTimeout,3000));
+              }
             } catch (_) {
-              // fallback to text search
-              const txt = sel.replace(/'/g,"\\'");
-              const xp2 = `//*[contains(normalize-space(string(.)),'${txt}')]`;
+              // try text fallback (case-insensitive)
               try {
-                await page.waitForXPath(xp2, { timeout: Math.min(actionTimeout, 3000) });
-                const els2 = await page.$x(xp2);
-                if (els2 && els2.length) success = await clickHandle(els2[0], Math.min(actionTimeout, 3000));
+                const lower = sel.toLowerCase();
+                const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '${lower}')]`;
+                await page.waitForSelector(`xpath=${xp2}`, { timeout: Math.min(actionTimeout, 3000) });
+                const loc2 = page.locator(`xpath=${xp2}`).first();
+                try { await loc2.click({ timeout: Math.min(actionTimeout, 3000), force: true }); success = true; }
+                catch (e) {
+                  const handle = await loc2.elementHandle();
+                  if (handle) success = await clickHandle(handle, Math.min(actionTimeout,3000));
+                }
               } catch (e) { lastErr = e; success = false; }
             }
           }
         }
       } catch (e) {
-        // log internal error but continue trying other selectors
         lastErr = e;
         success = false;
       }
 
-      if (success) break;
+      if (success) break; // stop trying other selectors for this step
     } // end selectors loop
 
     if (!success) {
-      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found', detail: (lastErr && lastErr.message) ? lastErr.message : null });
+      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found', detail: lastErr && lastErr.message ? lastErr.message : String(lastErr) });
       if (step.mandatory) throw new Error(`Mandatory step failed: ${label}`);
     } else {
       sseSend(sessionId, 'log', { step: label, ok: true });
@@ -432,7 +480,7 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         await page.waitForTimeout(perActionDelay + Math.floor(Math.random()*350));
       }
     }
-  } // end steps loop
+  } // end steps
 }
 
 // helper to make a compact snippet (non-sensitive)
