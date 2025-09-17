@@ -11,7 +11,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const { EventEmitter } = require('events');
 
-const { chromium } = require('playwright'); // <-- Playwright
+const { chromium } = require('playwright');
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -133,6 +133,10 @@ function saveCookieIndex() {
 }
 
 // ----------------- quickValidateCookie (Playwright) -----------------
+/**
+ * cookies: array of puppeteer-like cookie objects {name, value, domain, path, ...}
+ * returns: { status: 'live'|'invalid'|'error'|'parsed', reason?: string, url?:string }
+ */
 async function quickValidateCookie(cookies, sessionId) {
   if (!VALIDATE_COOKIES) return { status: 'parsed', reason: 'validation-disabled' };
   if (!Array.isArray(cookies) || !cookies.length) return { status:'error', reason:'no-cookies' };
@@ -143,12 +147,14 @@ async function quickValidateCookie(cookies, sessionId) {
   const start = Date.now();
   try {
     browser = await launchBrowserWithFallback({ defaultViewport: { width:360, height:800 } });
+    // create context with mobile-like viewport & UA
     context = await browser.newContext({
       viewport: { width: 360, height: 800 },
       userAgent: 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
     });
     page = await context.newPage();
 
+    // Playwright expects cookies with "expires" maybe, but minimal form works.
     const pwCookies = cookies.map(c => {
       return {
         name: c.name,
@@ -161,6 +167,7 @@ async function quickValidateCookie(cookies, sessionId) {
       };
     });
 
+    // Visit first to establish origin (Playwright requires url when adding cookies)
     await page.goto('https://m.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
     try {
       await context.addCookies(pwCookies);
@@ -169,6 +176,7 @@ async function quickValidateCookie(cookies, sessionId) {
       return { status: 'error', reason: 'cookie-set-failed' };
     }
 
+    // reload to apply cookies
     await page.goto('https://m.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
     await page.waitForTimeout(1000);
 
@@ -231,6 +239,7 @@ app.use(express.static(PUBLIC_DIR));
 
 // admin middleware
 function requireAdmin(req, res, next) {
+  // Accept token via header OR body OR query param (UI uses query param for EventSource)
   const t = req.headers['x-admin-token'] || req.body.adminToken || req.query.adminToken;
   if (!t || t !== ADMIN_TOKEN) {
     simpleLog('unauthorized', { ip: req.ip, path: req.path });
@@ -243,19 +252,7 @@ function requireAdmin(req, res, next) {
 const sessions = new Map();
 function getSession(sid = 'default') {
   if (!sessions.has(sid)) {
-    sessions.set(sid, {
-      clients: new Set(),
-      running: false,
-      abort: false,
-      emitter: new EventEmitter(),
-      logs: [],
-      browser: null,
-      contexts: [],
-      pages: [],
-      currentPage: null,
-      currentContext: null,
-      previewIntervals: new Map() // page object -> interval id
-    });
+    sessions.set(sid, { clients: new Set(), running: false, abort: false, emitter: new EventEmitter(), logs: [], browser: null, contexts: [], pages: [], currentPage: null, currentContext: null, previewIntervals: new Map() });
   }
   return sessions.get(sid);
 }
@@ -277,45 +274,41 @@ function sseSend(sid, event, payload) {
 function attachLivePreview(sessionId, page, opts = {}) {
   const intervalMs = opts.intervalMs || 3000; // default 3s
   const sess = getSession(sessionId);
-  if (!page) return null;
+  // don't attach twice for same page
+  try {
+    if (sess.previewIntervals.has(page)) return sess.previewIntervals.get(page);
+  } catch (_) {}
 
-  // prevent duplicate attach for same page object
-  if (sess.previewIntervals && sess.previewIntervals.has(page)) {
-    return sess.previewIntervals.get(page);
-  }
-
-  const id = setInterval(async () => {
+  let stopped = false;
+  async function sendShot() {
     try {
-      // if page closed, clear
-      if (page.isClosed && typeof page.isClosed === 'function' ? page.isClosed() : false) {
-        clearInterval(id);
-        if (sess && sess.previewIntervals) sess.previewIntervals.delete(page);
+      if (!page || (typeof page.isClosed === 'function' && page.isClosed())) {
+        stopped = true;
         return;
       }
-      const buf = await page.screenshot({ fullPage: false }).catch(()=>null);
+      const buf = await page.screenshot({ fullPage: false }).catch(() => null);
       if (buf) {
-        // Send JSON object with b64 key so client can parse easily
         sseSend(sessionId, 'screenshot', { b64: buf.toString('base64') });
       }
+      try {
+        const url = await page.url().catch(()=>null);
+        if (url) sseSend(sessionId, 'page-url', { url });
+      } catch(_) {}
     } catch (e) {
       simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
     }
+  }
+
+  // immediate shot
+  sendShot().catch(()=>{});
+  // periodic
+  const id = setInterval(async () => {
+    if (stopped) { clearInterval(id); try { sess.previewIntervals.delete(page); } catch(_){}; return; }
+    await sendShot();
   }, intervalMs);
 
-  try { if (sess && sess.previewIntervals) sess.previewIntervals.set(page, id); } catch(_) {}
+  try { sess.previewIntervals.set(page, id); } catch (_) {}
   return id;
-}
-
-// cleanup preview intervals for a session
-function clearAllPreviewsForSession(sid) {
-  try {
-    const sess = getSession(sid);
-    if (!sess || !sess.previewIntervals) return;
-    for (const [page, id] of sess.previewIntervals.entries()) {
-      try { clearInterval(id); } catch(_) {}
-    }
-    sess.previewIntervals.clear();
-  } catch (e) { simpleLog('clearAllPreviewsForSession-err', e && e.message); }
 }
 
 // cookie parser helper: returns kv map OR null if not account
@@ -336,9 +329,18 @@ function parseLineToKv(line) {
 
 function loadCookieAccountsFromFile() {
   const out = [];
+  const cookieJson = path.join(UPLOAD_DIR, 'cookies.json');
   const cookieTxt = path.join(UPLOAD_DIR, 'cookies.txt');
   try {
-    if (fs.existsSync(cookieTxt)) {
+    if (fs.existsSync(cookieJson)) {
+      const raw = fs.readFileSync(cookieJson, 'utf8');
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        for (const kv of arr) {
+          if (kv && kv.c_user && kv.xs) out.push(kv);
+        }
+      }
+    } else if (fs.existsSync(cookieTxt)) {
       const lines = fs.readFileSync(cookieTxt, 'utf-8').split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
       for (const l of lines) {
         const parsed = parseLineToKv(l);
@@ -358,13 +360,30 @@ function loadCookieAccountsFromFile() {
   return out;
 }
 
+// click helpers
+async function tryClickCss(page, sel, timeout = 3000) {
+  try {
+    await page.waitForSelector(sel, { timeout });
+    await page.click(sel, { force: true, timeout });
+    return true;
+  } catch (e) { return false; }
+}
+async function tryClickXpath(page, sel, timeout = 3000) {
+  try {
+    const el = await page.waitForXPath(sel, { timeout });
+    if (!el) throw new Error('no-el-xpath');
+    await el.click({ timeout });
+    return true;
+  } catch (e) { return false; }
+}
+
 // ===== Playwright-robust runFlowOnPage with retries, recovery & postCheck =====
-// (kept mostly as before; your flows control selectors)
 async function runFlowOnPage(page, flowSteps, opts = {}) {
   const { sessionId='default', perActionDelay=1100, actionTimeout=15000, maxAttempts=3 } = opts;
 
   function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
+  // low-level single-attempt click (tries locator, elementHandle, evaluate)
   async function singleClickAttempt({ type, value, timeout }) {
     if (type === 'css') {
       const loc = page.locator(value).first();
@@ -379,12 +398,14 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
       return true;
     }
     if (type === 'text') {
+      // Try Playwright's text helper
       try {
         const byText = page.getByText(value, { exact: false }).first();
         await byText.waitFor({ timeout });
         await byText.click({ timeout, force: true });
         return true;
       } catch (_) {
+        // fallback to case-insensitive xpath
         const lower = value.toLowerCase().replace(/'/g, "\\'");
         const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
         const loc2 = page.locator(`xpath=${xp}`).first();
@@ -393,35 +414,40 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         return true;
       }
     }
-    // autodetect
-    try {
-      const loc = page.locator(value).first();
-      await loc.waitFor({ timeout });
-      await loc.click({ timeout, force: true });
+    if (!type) {
+      // try css
+      try {
+        const loc = page.locator(value).first();
+        await loc.waitFor({ timeout });
+        await loc.click({ timeout, force: true });
+        return true;
+      } catch (_) {}
+      // try xpath
+      try {
+        const loc = page.locator(`xpath=${value}`).first();
+        await loc.waitFor({ timeout });
+        await loc.click({ timeout, force: true });
+        return true;
+      } catch (_) {}
+      // fallback text (case-insensitive)
+      const lower = value.toLowerCase().replace(/'/g, "\\'");
+      const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+      const loc2 = page.locator(`xpath=${xp2}`).first();
+      await loc2.waitFor({ timeout });
+      await loc2.click({ timeout, force: true });
       return true;
-    } catch (_) {}
-    try {
-      const loc = page.locator(`xpath=${value}`).first();
-      await loc.waitFor({ timeout });
-      await loc.click({ timeout, force: true });
-      return true;
-    } catch (_) {}
-    // final text fallback
-    const lower = value.toLowerCase().replace(/'/g, "\\'");
-    const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
-    const loc2 = page.locator(`xpath=${xp2}`).first();
-    await loc2.waitFor({ timeout });
-    await loc2.click({ timeout, force: true });
-    return true;
+    }
+    return false;
   }
 
+  // Try selector with retries + optional recovery attempts
   async function trySelector(selRaw, config = {}) {
     const attempts = config.attempts || maxAttempts;
     const timeout = config.timeout || Math.min(actionTimeout, 7000);
     const recovery = Array.isArray(config.recoverySelectors) ? config.recoverySelectors : [];
     let lastError = null;
 
-    // detect type/value
+    // detect type and value
     let type = null, value = selRaw;
     if (/^css:/.test(selRaw)) { type = 'css'; value = selRaw.replace(/^css:/,'').trim(); }
     else if (/^xpath:/.test(selRaw)) { type = 'xpath'; value = selRaw.replace(/^xpath:/,'').trim(); }
@@ -430,17 +456,17 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
 
     for (let i=0;i<attempts;i++){
       try {
-        // try scroll into view
+        // best-effort scroll into view
         try {
           if (type === 'css') {
             const loc = page.locator(value).first();
             await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
           } else {
-            const selForWait = type === 'xpath' ? `xpath=${value}` : (type === 'text' ? `xpath=${value}` : value);
-            const loc = page.locator(selForWait).first();
+            const loc = page.locator(type === 'xpath' ? `xpath=${value}` : value).first();
             await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
           }
         } catch (_) {}
+
         await singleClickAttempt({ type, value, timeout });
         return { ok:true, attempt:i+1 };
       } catch (e) {
@@ -453,19 +479,18 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     for (const r of recovery) {
       try {
         try { await singleClickAttempt({ type: null, value: r, timeout: Math.min(3000, timeout) }); } catch(_) {}
-        await sleep(250);
         try {
+          await sleep(250);
           await singleClickAttempt({ type, value, timeout });
           return { ok:true, recovered:true };
-        } catch (e2) {
-          lastError = e2;
-        }
+        } catch (e2) { lastError = e2; }
       } catch (_) {}
     }
 
     return { ok:false, error: lastError };
   }
 
+  // Optional simple post-check
   async function postCheckOk(check) {
     if (!check) return true;
     try {
@@ -493,42 +518,31 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
 
   for (const step of flowSteps) {
     if (getSession(sessionId).abort) throw new Error('ABORTED');
-    const label = step.label || step.selector || 'step';
+    const label = step.label || step.selector || step.text || 'step';
     sseSend(sessionId, 'log', { step: label });
 
-    const selectors = Array.isArray(step.selectors) ? step.selectors : (step.selector ? [step.selector] : []);
-    const attemptsForStep = step.attempts || maxAttempts;
-    const recoverySelectors = step.recoverySelectors || [];
-    const mandatory = !!step.mandatory;
-    const postCheck = step.postCheck || null;
-
-    let stepOk = false;
+    const sels = Array.isArray(step.selectors) ? step.selectors.slice() : (step.selector ? [step.selector] : []);
+    let success = false;
     let lastDetail = null;
-
-    for (const sel of selectors) {
-      const res = await trySelector(sel, { attempts: attemptsForStep, timeout: Math.min(actionTimeout, 8000), recoverySelectors });
-      if (res.ok) { stepOk = true; lastDetail = res; break; }
+    for (const rawSel of sels) {
+      if (!rawSel) continue;
+      const res = await trySelector(rawSel, { attempts: step.attempts || maxAttempts, timeout: Math.min(actionTimeout,8000), recoverySelectors: step.recoverySelectors || [] });
+      if (res.ok) { success = true; lastDetail = res; break; }
       lastDetail = res.error || res;
     }
-
-    if (stepOk && postCheck) {
-      const ok = await postCheckOk(postCheck);
+    if (success && step.postCheck) {
+      const ok = await postCheckOk(step.postCheck);
       if (!ok) {
-        let pcOk = false;
-        for (let r=0;r<2 && !pcOk;r++) {
-          await sleep(300);
-          pcOk = await postCheckOk(postCheck);
-        }
-        if (!pcOk) {
-          stepOk = false;
-          lastDetail = { postCheckFailed: true };
-        }
+        // small retries
+        let ok2 = false;
+        for (let r=0;r<2 && !ok2;r++) { await sleep(300); ok2 = await postCheckOk(step.postCheck); }
+        if (!ok2) { success = false; lastDetail = { postCheckFailed:true }; }
       }
     }
 
-    if (!stepOk) {
+    if (!success) {
       sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found-or-postcheck-failed', detail: (lastDetail && lastDetail.error) ? (lastDetail.error.message || String(lastDetail.error)) : JSON.stringify(lastDetail) });
-      if (mandatory) throw new Error(`Mandatory step failed: ${label}`);
+      if (step.mandatory) throw new Error(`Mandatory step failed: ${label}`);
     } else {
       sseSend(sessionId, 'log', { step: label, ok: true, detail: lastDetail });
     }
@@ -588,8 +602,7 @@ async function reportRunner(sessionId, opts = {}) {
     if (!found) { sseSend(sessionId,'error',{msg:'Requested set not found'}); sess.running=false; return; }
 
     async function launchBrowser() {
-      // Force headless on server environments (Render/CI)
-      return await launchBrowserWithFallback({ headless: true, args: opts.args || [], defaultViewport: opts.defaultViewport });
+      return await launchBrowserWithFallback({ headless: !!opts.headless, args: opts.args || [], defaultViewport: opts.defaultViewport });
     }
 
     let browser = await launchBrowser();
@@ -641,6 +654,7 @@ async function reportRunner(sessionId, opts = {}) {
 
         simpleLog('page-created-for-account', accId);
 
+        // safe cookies mapping for playwright
         const pwCookies = accountCookies.map(c => ({
           name: c.name,
           value: String(c.value),
@@ -651,6 +665,7 @@ async function reportRunner(sessionId, opts = {}) {
           sameSite: c.sameSite || 'Lax'
         }));
 
+        // open base and add cookies
         await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
         if (pwCookies.length) {
           try {
@@ -662,20 +677,12 @@ async function reportRunner(sessionId, opts = {}) {
           sseSend(sessionId, 'warn', { msg: 'No cookies to set for account', account: accId });
         }
 
+        // navigate to target
         await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
-        try {
-          const curUrl = await page.url();
-          simpleLog('Page navigated', { account: accId, url: curUrl });
-          // send both info log and a dedicated page-url event so UI updates
-          sseSend(sessionId,'info',{msg:'page-url',url:curUrl});
-          sseSend(sessionId,'page-url',{url:curUrl});
-        } catch(e){}
+        try { const curUrl = await page.url(); simpleLog('Page navigated', { account: accId, url: curUrl }); sseSend(sessionId,'info',{msg:'page-url',url:curUrl}); } catch(e){}
 
-        // attach live preview (sends screenshots via SSE screenshot event)
-        try {
-          attachLivePreview(sessionId, page, { intervalMs: 3000 });
-          sseSend(sessionId, 'log', { msg: 'attached live preview' });
-        } catch (e) { simpleLog('attach-live-preview-failed', e && e.message); }
+        // attach live preview (screenshot events)
+        try { attachLivePreview(sessionId, page, { intervalMs: 3000 }); } catch(e){ simpleLog('attachLivePreview-err', e && e.message); }
 
         await page.waitForTimeout(1200 + Math.floor(Math.random()*800));
 
@@ -687,16 +694,17 @@ async function reportRunner(sessionId, opts = {}) {
 
         sseSend(sessionId, 'success', { account: accId, msg: 'Flow completed' });
 
-        try { await page.close(); } catch(e){}
-        try { await context.close(); } catch(e){}
-        // clear preview interval for this page if any
+        // cleanup page & interval
         try {
           if (sess.previewIntervals && sess.previewIntervals.has(page)) {
-            clearInterval(sess.previewIntervals.get(page));
+            const iid = sess.previewIntervals.get(page);
+            if (iid) clearInterval(iid);
             sess.previewIntervals.delete(page);
           }
         } catch(_) {}
 
+        try { await page.close(); } catch(e){}
+        try { await context.close(); } catch(e){}
         sess.pages = sess.pages.filter(p => p !== page);
         sess.contexts = sess.contexts.filter(c => c !== context);
         sess.currentPage = null;
@@ -705,14 +713,6 @@ async function reportRunner(sessionId, opts = {}) {
         sseSend(sessionId,'error',{account: accId, error: err && err.message ? err.message : String(err)});
         try { if (page) await page.close(); } catch(e){}
         try { if (context) await context.close(); } catch(e){}
-        // cleanup preview interval for failed page
-        try {
-          if (sess.previewIntervals && sess.previewIntervals.has(page)) {
-            clearInterval(sess.previewIntervals.get(page));
-            sess.previewIntervals.delete(page);
-          }
-        } catch(_) {}
-
         sess.pages = sess.pages.filter(p => p !== page);
         sess.contexts = sess.contexts.filter(c => c !== context);
         sess.currentPage = null;
@@ -733,8 +733,6 @@ async function reportRunner(sessionId, opts = {}) {
       sess.pages = [];
       sess.currentPage = null;
       sess.currentContext = null;
-      // clear any preview intervals
-      clearAllPreviewsForSession(sessionId);
       sseSend(sessionId, 'done', { msg: 'Runner finished' });
     } catch (e) {
       sseSend(sessionId, 'fatal', { msg: e && e.message ? e.message : String(e) });
@@ -821,7 +819,6 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
   uploadLock = true;
 
   try {
-    // read raw content from uploaded file OR body.text
     let raw = '';
     if (req.file) {
       const target = path.join(UPLOAD_DIR, 'cookies.txt');
@@ -839,7 +836,6 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
       return res.status(400).json({ ok:false, message:'No file or text' });
     }
 
-    // split into non-empty lines
     const lines = raw.split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
     if (!lines.length) {
       sseSend(sessionId, 'warn', { msg: 'No cookie lines found in file' });
@@ -847,24 +843,24 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
       return res.json({ ok:true, parsed: 0 });
     }
 
-    // reset index
+    // reset index & cookie json
     COOKIE_INDEX.cookies = [];
     COOKIE_INDEX.counts = { total:0, live:0, invalid:0, parsed:0, error:0 };
     saveCookieIndex();
 
+    const parsedArr = [];
     let parsedCount = 0;
 
-    // iterate lines
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       try {
         const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
-        const snippet = (typeof makeSnippetFromKv === 'function') ? makeSnippetFromKv(line, kv) : (line.length > 60 ? line.slice(0,40) + '...' : line);
+        const snippet = makeSnippetFromKv(line, kv);
         const summary = { lineIndex: i + 1, snippet, hasCUser, hasXs, isAccount };
 
         if (!isAccount) {
           sseSend(sessionId, 'cookieStatus', { status: 'invalid', reason: 'missing c_user/xs', ...summary });
-          const entryObj = {
+          const entry = {
             lineIndex: i + 1,
             originalLine: line,
             snippet,
@@ -872,7 +868,7 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
             parsedAt: (new Date()).toISOString(),
             validateResult: { status: 'invalid', reason: 'missing c_user/xs' }
           };
-          COOKIE_INDEX.cookies.push(entryObj);
+          COOKIE_INDEX.cookies.push(entry);
           saveCookieIndex();
           continue;
         }
@@ -880,9 +876,8 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
         parsedCount++;
         sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
 
-        // build cookie objects for Playwright
         const cookieObjects = [];
-        for (const [k, v] of Object.entries(kv || {})) {
+        for (const [k, v] of Object.entries(kv)) {
           if (k && v !== undefined) {
             cookieObjects.push({ name: k, value: String(v), domain: '.facebook.com', path: '/', httpOnly: false, secure: true });
           }
@@ -901,7 +896,6 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
           result = { status: 'parsed', reason: 'validation-disabled' };
         }
 
-        // emit SSE based on result
         if (result.status === 'live') {
           sseSend(sessionId, 'cookieStatus', { status: 'live', lineIndex: i + 1, reason: result.reason, url: result.url || null });
         } else if (result.status === 'invalid') {
@@ -912,7 +906,7 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
           sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: result.reason });
         }
 
-        const entryObj = {
+        const entry = {
           lineIndex: i + 1,
           originalLine: line,
           snippet,
@@ -920,11 +914,11 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
           parsedAt: (new Date()).toISOString(),
           validateResult: result
         };
-        COOKIE_INDEX.cookies.push(entryObj);
+        COOKIE_INDEX.cookies.push(entry);
+        parsedArr.push(kv);
         saveCookieIndex();
 
-        // polite gap between validations
-        await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
+        await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random()*400)));
       } catch (lineErr) {
         simpleLog('uploadCookies-line-error', { lineIndex: i + 1, error: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
         sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
@@ -944,6 +938,9 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
       }
     }
 
+    // save JSON simplified cookies for quick load
+    try { await fsp.writeFile(path.join(UPLOAD_DIR,'cookies.json'), JSON.stringify(parsedArr, null, 2), 'utf8'); } catch(e){ simpleLog('cookies.json-save-err', e && e.message); }
+
     sseSend(sessionId, 'log', { msg:`Parsed ${parsedCount} account cookie(s)` });
     uploadLock = false;
     return res.json({ ok:true, parsed: parsedCount, totalLines: lines.length });
@@ -955,7 +952,7 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
   }
 });
 
-// cookieList endpoint for UI (returns the JSON sample shape you wanted)
+// cookieList endpoint for UI
 app.get('/cookieList', requireAdmin, (req,res) => {
   recalcCounts();
   res.json({
@@ -1009,8 +1006,6 @@ app.post('/stop', requireAdmin, async (req, res) => {
     for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
     sess.contexts = [];
     if (sess.browser) { try { await sess.browser.close(); } catch(e) {} sess.browser = null; }
-    // clear preview intervals
-    clearAllPreviewsForSession(sessionId);
   } catch (e) { simpleLog('stop-cleanup-error', e && e.message); }
   return res.json({ ok:true, message:'Stop requested and cleanup attempted' });
 });
@@ -1055,7 +1050,6 @@ async function gracefulShutdown() {
       for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
       for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
       if (sess.browser) { try { await sess.browser.close(); } catch(e) {} }
-      clearAllPreviewsForSession(sid);
     } catch (e) {}
   }
   process.exit(0);
