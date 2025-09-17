@@ -1,250 +1,256 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Tool Live — Preview & Logs</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Live Preview - FB Report Bot</title>
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; background:#0f1720; color:#e6eef6}
-  .wrap{display:grid;grid-template-columns:360px 1fr;gap:12px;padding:12px;height:100vh;box-sizing:border-box}
-  .panel{background:#0b1220;border-radius:8px;padding:12px;box-shadow:0 6px 18px rgba(2,6,23,.6);overflow:auto}
-  h2{margin:0 0 8px 0;font-size:14px}
-  label{display:block;margin:6px 0 3px;color:#99a7bf;font-size:12px}
-  input,button,select,textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #162233;background:#07101a;color:#e6eef6}
-  button{cursor:pointer}
-  #screenshot{width:100%;height:auto;border-radius:6px;border:1px solid #122}
-  .logs{font-family:monospace;font-size:12px;line-height:1.3;color:#cfe8ff;background:#071426;padding:8px;border-radius:6px;height:45vh;overflow:auto}
-  .meta{font-size:13px;color:#bcd; margin-bottom:8px}
-  .small{font-size:12px;color:#97a9bf}
-  .controls{display:flex;gap:8px}
-  .controls button{flex:1}
-  .row{display:flex;gap:8px}
-  .muted{color:#6f8599}
-  .status-live{color:#5ee67a}
-  .status-error{color:#ff7b7b}
+  :root{--bg:#0f1720;--panel:#0b1220;--muted:#9aa4b2;--accent:#1f8ef1;--card:#0b1622}
+  html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Arial;background:var(--bg);color:#e6eef6}
+  .wrap{display:flex;height:100%;gap:12px;padding:12px}
+  .left{width:320px;min-width:220px;background:var(--panel);border-radius:8px;padding:12px;box-sizing:border-box}
+  .center{flex:1;background:var(--card);border-radius:8px;padding:12px;display:flex;flex-direction:column;align-items:center;gap:8px;box-sizing:border-box}
+  .right{width:320px;min-width:220px;background:var(--panel);border-radius:8px;padding:12px;box-sizing:border-box;overflow:auto}
+  label{display:block;font-size:12px;color:var(--muted);margin-top:8px;margin-bottom:6px}
+  input[type=text]{width:100%;padding:8px;border-radius:6px;border:1px solid #12202a;background:#071018;color:#dfe9f3}
+  button{padding:8px 10px;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+  .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+  #preview-img{max-width:412px;width:100%;height:auto;border-radius:6px;border:1px solid rgba(255,255,255,0.03);background:#051018}
+  .meta{width:100%;display:flex;flex-direction:column;gap:6px}
+  .meta .line{font-size:13px;color:#cfe6ff;background:rgba(255,255,255,0.02);padding:8px;border-radius:6px}
+  .log{font-family:monospace;font-size:12px;color:#bcd3ee;white-space:pre-wrap}
+  .small{font-size:12px;color:var(--muted)}
+  .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:middle}
+  .dot-ok{background:#2ecc71}.dot-warn{background:#f39c12}.dot-err{background:#e74c3c}
+  .controls{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .log-list{height:calc(100vh - 220px);overflow:auto;padding:8px;background:rgba(255,255,255,0.01);border-radius:6px}
+  .log-item{padding:6px;border-bottom:1px dashed rgba(255,255,255,0.02);font-size:12px;color:#cfe6ff}
+  .muted{color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="panel">
-    <h2>Connection & Controls</h2>
+  <div class="left">
+    <h3 style="margin:0 0 8px 0">Live Monitor</h3>
 
     <label>Admin token</label>
-    <input id="adminToken" placeholder="Enter ADMIN_TOKEN" />
+    <input id="adminToken" type="text" placeholder="Enter ADMIN_TOKEN" />
 
     <label>Session ID</label>
-    <input id="sessionId" value="default" />
+    <input id="sessionId" type="text" value="default" />
 
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button id="btnConnect">Connect SSE</button>
-      <button id="btnDisconnect">Disconnect</button>
-    </div>
-
-    <div style="height:8px"></div>
-
-    <label>Start / Stop runner</label>
     <div class="controls">
-      <button id="btnStart">Start</button>
-      <button id="btnStop">Stop</button>
+      <button id="connectBtn">Connect SSE</button>
+      <button id="disconnectBtn" class="btn-ghost">Disconnect</button>
     </div>
 
-    <div style="height:8px"></div>
+    <div style="margin-top:12px;">
+      <div class="muted">Connection</div>
+      <div id="connStatus" class="line meta" style="margin-top:6px">Not connected</div>
+    </div>
 
-    <label>Upload cookies (text)</label>
-    <input id="fileCookies" type="file" accept=".txt" />
-    <button id="btnUpload">Upload</button>
+    <div style="margin-top:12px;">
+      <div class="muted">Current page / activity</div>
+      <div id="currentUrl" class="line meta small">—</div>
+      <div id="lastStep" class="line meta small" style="margin-top:8px">Last step: —</div>
+      <div id="lastEventTime" class="muted" style="margin-top:8px">—</div>
+    </div>
 
-    <div style="height:12px"></div>
-
-    <div class="meta">
-      <div>Session: <span id="metaSession" class="muted">-</span></div>
-      <div>Runner: <span id="metaRunning" class="muted">stopped</span></div>
-      <div>Current page url: <span id="metaUrl" class="muted">-</span></div>
-      <div>Last step: <span id="metaStep" class="muted">-</span></div>
-      <div>Last event: <span id="metaEvent" class="muted">-</span></div>
+    <div style="margin-top:12px;">
+      <div class="muted">Quick controls</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="btnStart" class="btn-ghost">Start</button>
+        <button id="btnStop" class="btn-ghost">Stop</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Use these buttons only if your server exposes /start and /stop and you have token set in Admin token.</div>
     </div>
   </div>
 
-  <div class="panel">
-    <h2>Live Preview & Logs</h2>
-
-    <div style="display:flex;gap:12px;">
-      <div style="flex:0 0 420px">
-        <img id="screenshot" src="" alt="live screenshot (base64)" />
-        <div style="margin-top:8px" class="small muted">Preview (updates every ~3s if attached)</div>
-      </div>
-
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <div style="flex:1">
-            <input id="filter" placeholder="filter logs..." />
-          </div>
-          <div><button id="clearLogsBtn">Clear UI logs</button></div>
-        </div>
-
-        <div class="logs" id="logs"></div>
+  <div class="center">
+    <div style="width:100%;max-width:560px;display:flex;justify-content:center;align-items:center;flex-direction:column">
+      <img id="preview-img" alt="Live preview" src="" />
+      <div style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+        <div class="small muted">Preview (auto updates ~every 3s)</div>
+        <div class="small muted" id="preview-meta">—</div>
       </div>
     </div>
+  </div>
+
+  <div class="right">
+    <h4 style="margin:0 0 8px 0">Live Logs</h4>
+    <div id="logs" class="log-list"></div>
   </div>
 </div>
 
 <script>
 (function(){
-  const adminEl = document.getElementById('adminToken');
-  const sessionEl = document.getElementById('sessionId');
-  const btnConnect = document.getElementById('btnConnect');
-  const btnDisconnect = document.getElementById('btnDisconnect');
-  const btnStart = document.getElementById('btnStart');
-  const btnStop = document.getElementById('btnStop');
-  const btnUpload = document.getElementById('btnUpload');
-  const fileCookies = document.getElementById('fileCookies');
-
-  const metaSession = document.getElementById('metaSession');
-  const metaRunning = document.getElementById('metaRunning');
-  const metaUrl = document.getElementById('metaUrl');
-  const metaStep = document.getElementById('metaStep');
-  const metaEvent = document.getElementById('metaEvent');
-
-  const logsEl = document.getElementById('logs');
-  const screenshotEl = document.getElementById('screenshot');
-  const filterEl = document.getElementById('filter');
-  const clearLogsBtn = document.getElementById('clearLogsBtn');
+  const adminInput = document.getElementById('adminToken');
+  const sessionInput = document.getElementById('sessionId');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const connStatus = document.getElementById('connStatus');
+  const currentUrl = document.getElementById('currentUrl');
+  const lastStep = document.getElementById('lastStep');
+  const logs = document.getElementById('logs');
+  const previewImg = document.getElementById('preview-img');
+  const previewMeta = document.getElementById('preview-meta');
+  const lastEventTime = document.getElementById('lastEventTime');
 
   let es = null;
-  let connected = false;
-  let uiLogs = [];
 
-  function addLog(level, msg, obj){
-    const ts = new Date().toLocaleTimeString();
-    const line = { ts, level, msg, obj };
-    uiLogs.push(line);
-    renderLogs();
-  }
-  function renderLogs(){
-    const f = (filterEl.value || '').toLowerCase().trim();
-    const items = uiLogs.filter(it => !f || (it.msg + JSON.stringify(it.obj||'')).toLowerCase().includes(f));
-    logsEl.innerHTML = items.slice(-1000).map(it => {
-      const color = it.level==='error' ? 'status-error' : (it.level==='warn' ? 'status-error' : 'muted');
-      return `<div><span class="small muted">[${it.ts}]</span> <strong>${it.msg}</strong> <span class="${color}">${it.level}</span><div style="font-size:11px;color:#9fb6d0">${it.obj ? JSON.stringify(it.obj) : ''}</div></div>`;
-    }).join('');
-    logsEl.scrollTop = logsEl.scrollHeight;
+  function addLog(text, cls) {
+    const el = document.createElement('div');
+    el.className = 'log-item';
+    if (cls) el.style.color = cls;
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    logs.prepend(el);
+    // keep only recent 300
+    while (logs.children.length > 400) logs.removeChild(logs.lastChild);
   }
 
-  clearLogsBtn.onclick = () => { uiLogs = []; renderLogs(); };
-
-  function sseConnect(){
-    if (!adminEl.value) return alert('Admin token required');
-    if (es) try{ es.close(); }catch(_){}
-    const sid = encodeURIComponent(sessionEl.value || 'default');
-    const token = encodeURIComponent(adminEl.value);
-    const url = `/events?sessionId=${sid}&adminToken=${token}`;
-    es = new EventSource(url, { withCredentials: true });
-    metaSession.textContent = sid;
-    addLog('info','SSE connecting',{url});
-    es.addEventListener('open', ()=> {
-      connected = true;
-      addLog('info','SSE open', {});
-    });
-    es.addEventListener('ready', (ev) => {
-      try { const d = JSON.parse(ev.data); addLog('info','ready',d); metaEvent.textContent = 'ready'; }
-      catch(e){}
-    });
-    es.addEventListener('log', (ev) => {
-      try { const d = JSON.parse(ev.data); addLog('log', d.step ? `step: ${d.step}` : (d.msg||'log'), d); if (d.msg==='page-url' && d.url) metaUrl.textContent = d.url; if(d.step) metaStep.textContent = d.step; metaEvent.textContent='log'; }
-      catch(e){}
-    });
-    es.addEventListener('info', (ev)=> { try{ const d=JSON.parse(ev.data); addLog('info', d.msg||'info', d); metaEvent.textContent='info'; if(d.msg==='page-url' && d.url) metaUrl.textContent = d.url; }catch(e){}});
-    es.addEventListener('warn', (ev)=> { try{ const d=JSON.parse(ev.data); addLog('warn', d.step ? `warn: ${d.step}` : (d.msg||'warn'), d); metaEvent.textContent='warn'; }catch(e){}});
-    es.addEventListener('error', (ev)=> { try{ const d=JSON.parse(ev.data); addLog('error', d.msg||'error', d); metaEvent.textContent='error'; if(d.account) addLog('error', 'account-error', d.account); }catch(e){}});
-    es.addEventListener('cookieStatus', (ev)=> { try{ const d=JSON.parse(ev.data); addLog('cookie', d.status, d); metaEvent.textContent='cookieStatus'; }catch(e){}});
-    es.addEventListener('screenshot', (ev)=> {
-      try {
-        const d = JSON.parse(ev.data);
-        if (d && d.b64) {
-          screenshotEl.src = 'data:image/png;base64,' + d.b64;
-          addLog('info','screenshot', { ts: d.ts });
-          metaEvent.textContent='screenshot';
-        }
-      } catch(e) { addLog('warn','screenshot-parse-error',{}); }
-    });
-    es.onerror = (e) => {
-      addLog('error','SSE error',e);
-      connected = false;
-    };
+  function setStatus(s) {
+    connStatus.textContent = s;
   }
 
-  function sseDisconnect(){
-    if (es) try { es.close(); addLog('info','SSE closed'); } catch(_) {}
-    es = null;
-    connected = false;
-  }
-
-  btnConnect.onclick = sseConnect;
-  btnDisconnect.onclick = sseDisconnect;
-
-  async function postJson(path, body){
-    if (!adminEl.value) return alert('Admin token required');
-    const token = adminEl.value;
-    try {
-      const res = await fetch(path, {
-        method:'POST',
-        headers: { 'Content-Type':'application/json', 'x-admin-token': token },
-        body: JSON.stringify(body || {})
-      });
-      const json = await res.json();
-      addLog('info', 'POST:'+path, json);
-      return json;
-    } catch (e) { addLog('error','post-failed',{path,e: String(e)}); return null; }
-  }
-
-  btnStart.onclick = async () => {
-    const target = prompt('Target URL (e.g. https://m.facebook.com/... )','');
-    if (!target) return;
-    const setType = prompt('setType (profile/page/post)','profile');
-    const body = { targetUrl: target, setType, sessionId: sessionEl.value || 'default' };
-    const r = await postJson('/start', body);
-    if (r && r.ok) metaRunning.textContent = 'running';
-  };
-
-  btnStop.onclick = async () => {
-    const r = await postJson('/stop', { sessionId: sessionEl.value || 'default' });
-    if (r && r.ok) metaRunning.textContent = 'stopped';
-  };
-
-  btnUpload.onclick = async () => {
-    if (!fileCookies.files || fileCookies.files.length===0) return alert('select cookies txt');
-    const f = fileCookies.files[0];
-    const form = new FormData();
-    form.append('cookies', f);
-    form.append('sessionId', sessionEl.value || 'default');
-    const token = adminEl.value;
-    try {
-      const res = await fetch('/uploadCookies?sessionId=' + encodeURIComponent(sessionEl.value||'default'), {
-        method: 'POST',
-        headers: { 'x-admin-token': token },
-        body: form
-      });
-      const j = await res.json();
-      addLog('info','uploadCookies', j);
-      alert('Upload response: ' + JSON.stringify(j));
-    } catch (e) {
-      addLog('error','upload-failed',{err:String(e)});
-      alert('Upload failed: ' + e);
+  function connect() {
+    const token = (adminInput.value || '').trim();
+    const sid = (sessionInput.value || 'default').trim();
+    if (!token) {
+      alert('Admin token required to connect SSE');
+      return;
     }
-  };
+    if (es) es.close();
 
-  // auto-connect if token present in querystring
-  (function autoConnectFromQS(){
-    try {
-      const params = new URLSearchParams(location.search);
-      if (params.get('adminToken')) adminEl.value = params.get('adminToken');
-      if (params.get('sessionId')) sessionEl.value = params.get('sessionId');
-      if (adminEl.value) {
-        // optional autoconnect param
-        if (params.get('autoconnect') === '1') sseConnect();
+    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
+    es = new EventSource(url);
+
+    es.onopen = () => {
+      setStatus('Connected (session: ' + sid + ')');
+      addLog('SSE connected → ' + url, '#9ee7a6');
+    };
+
+    es.onerror = (e) => {
+      setStatus('Connection error / closed');
+      addLog('SSE error or closed', '#f7b0b0');
+    };
+
+    // generic message fallback
+    es.addEventListener('message', (ev) => {
+      handleEvent('message', ev.data);
+    });
+
+    // common event types we expect: ready, log, info, warn, error, screenshot, preview-info, cookieStatus, success, done
+    const types = ['ready','log','info','warn','error','screenshot','preview-info','cookieStatus','success','done'];
+    types.forEach(t => {
+      es.addEventListener(t, (ev) => handleEvent(t, ev.data));
+    });
+
+    disconnectBtn.disabled = false;
+    connectBtn.disabled = true;
+  }
+
+  function disconnect() {
+    if (es) {
+      try { es.close(); } catch(_) {}
+      es = null;
+    }
+    setStatus('Disconnected');
+    addLog('SSE disconnected', '#f6f0b0');
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
+  }
+
+  function handleEvent(type, rawData) {
+    lastEventTime.textContent = 'Last event: ' + new Date().toLocaleTimeString();
+    // data may be JSON or plain string/base64. try parse
+    let data = null;
+    try { data = JSON.parse(rawData); } catch(e) { data = rawData; }
+
+    if (type === 'screenshot') {
+      // server should send { b64, url, ts } but fallback to raw base64
+      let b64 = null, url = null;
+      if (typeof data === 'object' && data !== null) { b64 = data.b64 || data; url = data.url || null; }
+      else if (typeof data === 'string') { b64 = data; }
+      if (b64) {
+        previewImg.src = 'data:image/png;base64,' + b64;
+        previewMeta.textContent = url ? (new URL(url, location.href)).pathname : '';
+        addLog('screenshot received ' + (url ? ('@ ' + url) : ''), '#d0f0ff');
+        currentUrl.textContent = url || currentUrl.textContent || '—';
+      } else {
+        addLog('screenshot event but no data', '#f6d6d6');
       }
-    } catch(e){}
-  })();
+      return;
+    }
+
+    if (type === 'preview-info') {
+      let url = null;
+      if (typeof data === 'object' && data !== null) url = data.url;
+      else if (typeof data === 'string') url = data;
+      if (url) {
+        currentUrl.textContent = url;
+        previewMeta.textContent = url;
+        addLog('preview-info url: ' + url, '#dfe6ff');
+      }
+      return;
+    }
+
+    // other structured messages (log/info/warn/error)
+    if (typeof data === 'object' && data !== null) {
+      // common keys: step, msg, url, account, reason
+      if (data.step) {
+        lastStep.textContent = 'Last step: ' + data.step;
+      }
+      if (data.msg && typeof data.msg === 'string') {
+        addLog(type + ' → ' + data.msg + (data.url ? (' @ ' + data.url) : ''), type === 'error' ? '#ffb6b6' : (type === 'warn' ? '#ffd8a8' : '#cfefff'));
+      } else {
+        addLog(type + ' → ' + JSON.stringify(data), '#cfefff');
+      }
+      if (data.url) currentUrl.textContent = data.url;
+      return;
+    }
+
+    // plain string fallback
+    addLog(type + ' → ' + String(data), '#cfefff');
+  }
+
+  // basic start/stop POST (optional)
+  document.getElementById('btnStart').addEventListener('click', async () => {
+    const token = (adminInput.value || '').trim();
+    const sid = (sessionInput.value || 'default').trim();
+    const target = prompt('Target URL to run (e.g. https://www.facebook.com/p/... )','');
+    if (!token || !target) return alert('adminToken & target required');
+    try {
+      const r = await fetch('/start', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-admin-token': token },
+        body: JSON.stringify({ sessionId: sid, targetUrl: target })
+      });
+      const j = await r.json();
+      addLog('start → ' + JSON.stringify(j), '#d0ffd0');
+    } catch (e) { addLog('start error: ' + e, '#ffb6b6'); }
+  });
+
+  document.getElementById('btnStop').addEventListener('click', async () => {
+    const token = (adminInput.value || '').trim();
+    const sid = (sessionInput.value || 'default').trim();
+    if (!token) return alert('adminToken required');
+    try {
+      const r = await fetch('/stop', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-admin-token': token },
+        body: JSON.stringify({ sessionId: sid })
+      });
+      const j = await r.json();
+      addLog('stop → ' + JSON.stringify(j), '#ffd0d0');
+    } catch (e) { addLog('stop error: ' + e, '#ffb6b6'); }
+  });
+
+  connectBtn.addEventListener('click', connect);
+  disconnectBtn.addEventListener('click', disconnect);
+  // default UI state
+  disconnectBtn.disabled = true;
+  setStatus('Idle - not connected');
+
 })();
 </script>
 </body>
