@@ -133,10 +133,6 @@ function saveCookieIndex() {
 }
 
 // ----------------- quickValidateCookie (Playwright) -----------------
-/**
- * cookies: array of puppeteer-like cookie objects {name, value, domain, path, ...}
- * returns: { status: 'live'|'invalid'|'error'|'parsed', reason?: string, url?:string }
- */
 async function quickValidateCookie(cookies, sessionId) {
   if (!VALIDATE_COOKIES) return { status: 'parsed', reason: 'validation-disabled' };
   if (!Array.isArray(cookies) || !cookies.length) return { status:'error', reason:'no-cookies' };
@@ -247,7 +243,19 @@ function requireAdmin(req, res, next) {
 const sessions = new Map();
 function getSession(sid = 'default') {
   if (!sessions.has(sid)) {
-    sessions.set(sid, { clients: new Set(), running: false, abort: false, emitter: new EventEmitter(), logs: [], browser: null, contexts: [], pages: [], currentPage: null, currentContext: null, previewIntervals: new Map() });
+    sessions.set(sid, {
+      clients: new Set(),
+      running: false,
+      abort: false,
+      emitter: new EventEmitter(),
+      logs: [],
+      browser: null,
+      contexts: [],
+      pages: [],
+      currentPage: null,
+      currentContext: null,
+      previewIntervals: new Map() // page object -> interval id
+    });
   }
   return sessions.get(sid);
 }
@@ -265,41 +273,49 @@ function sseSend(sid, event, payload) {
   }
 }
 
-// attach live preview for a page
+// attach live screenshot streaming for a page; returns intervalId
 function attachLivePreview(sessionId, page, opts = {}) {
   const intervalMs = opts.intervalMs || 3000; // default 3s
   const sess = getSession(sessionId);
-  if (!sess.previewIntervals) sess.previewIntervals = new Map();
+  if (!page) return null;
 
-  // avoid duplicate attach for same page
-  if (sess.previewIntervals.has(page)) return sess.previewIntervals.get(page);
+  // prevent duplicate attach for same page object
+  if (sess.previewIntervals && sess.previewIntervals.has(page)) {
+    return sess.previewIntervals.get(page);
+  }
 
   const id = setInterval(async () => {
     try {
-      // if page closed, clear interval
-      try {
-        if (!page || (typeof page.isClosed === 'function' && page.isClosed())) {
-          clearInterval(id);
-          sess.previewIntervals.delete(page);
-          return;
-        }
-      } catch (_) {}
-
-      let buf = null;
-      try {
-        buf = await page.screenshot({ fullPage: false });
-      } catch (_) { buf = null; }
-
+      // if page closed, clear
+      if (page.isClosed && typeof page.isClosed === 'function' ? page.isClosed() : false) {
+        clearInterval(id);
+        if (sess && sess.previewIntervals) sess.previewIntervals.delete(page);
+        return;
+      }
+      const buf = await page.screenshot({ fullPage: false }).catch(()=>null);
       if (buf) {
-        sseSend(sessionId, 'screenshot', { b64: buf.toString('base64'), ts: Date.now() });
+        // Send JSON object with b64 key so client can parse easily
+        sseSend(sessionId, 'screenshot', { b64: buf.toString('base64') });
       }
     } catch (e) {
       simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
     }
   }, intervalMs);
 
-  sess.previewIntervals.set(page, id);
+  try { if (sess && sess.previewIntervals) sess.previewIntervals.set(page, id); } catch(_) {}
   return id;
+}
+
+// cleanup preview intervals for a session
+function clearAllPreviewsForSession(sid) {
+  try {
+    const sess = getSession(sid);
+    if (!sess || !sess.previewIntervals) return;
+    for (const [page, id] of sess.previewIntervals.entries()) {
+      try { clearInterval(id); } catch(_) {}
+    }
+    sess.previewIntervals.clear();
+  } catch (e) { simpleLog('clearAllPreviewsForSession-err', e && e.message); }
 }
 
 // cookie parser helper: returns kv map OR null if not account
@@ -343,65 +359,60 @@ function loadCookieAccountsFromFile() {
 }
 
 // ===== Playwright-robust runFlowOnPage with retries, recovery & postCheck =====
+// (kept mostly as before; your flows control selectors)
 async function runFlowOnPage(page, flowSteps, opts = {}) {
   const { sessionId='default', perActionDelay=1100, actionTimeout=15000, maxAttempts=3 } = opts;
 
   function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-  // low-level single-attempt click (tries locator / text / xpath)
   async function singleClickAttempt({ type, value, timeout }) {
-    try {
-      if (type === 'css') {
-        const loc = page.locator(value).first();
-        await loc.waitFor({ timeout });
-        await loc.click({ timeout, force: true });
+    if (type === 'css') {
+      const loc = page.locator(value).first();
+      await loc.waitFor({ timeout });
+      await loc.click({ timeout, force: true });
+      return true;
+    }
+    if (type === 'xpath') {
+      const loc = page.locator(`xpath=${value}`).first();
+      await loc.waitFor({ timeout });
+      await loc.click({ timeout, force: true });
+      return true;
+    }
+    if (type === 'text') {
+      try {
+        const byText = page.getByText(value, { exact: false }).first();
+        await byText.waitFor({ timeout });
+        await byText.click({ timeout, force: true });
         return true;
-      }
-      if (type === 'xpath') {
-        const loc = page.locator(`xpath=${value}`).first();
-        await loc.waitFor({ timeout });
-        await loc.click({ timeout, force: true });
-        return true;
-      }
-      if (type === 'text') {
-        try {
-          const byText = page.getByText(value, { exact: false }).first();
-          await byText.waitFor({ timeout });
-          await byText.click({ timeout, force: true });
-          return true;
-        } catch (_) {
-          const lower = value.toLowerCase().replace(/'/g, "\\'");
-          const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
-          const loc2 = page.locator(`xpath=${xp}`).first();
-          await loc2.waitFor({ timeout });
-          await loc2.click({ timeout, force: true });
-          return true;
-        }
-      }
-      // autodetect: css -> xpath -> text
-      if (!type) {
-        try {
-          const loc = page.locator(value).first();
-          await loc.waitFor({ timeout });
-          await loc.click({ timeout, force: true });
-          return true;
-        } catch (_) {}
-        try {
-          const loc = page.locator(`xpath=${value}`).first();
-          await loc.waitFor({ timeout });
-          await loc.click({ timeout, force: true });
-          return true;
-        } catch (_) {}
+      } catch (_) {
         const lower = value.toLowerCase().replace(/'/g, "\\'");
-        const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
-        const loc2 = page.locator(`xpath=${xp2}`).first();
+        const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        const loc2 = page.locator(`xpath=${xp}`).first();
         await loc2.waitFor({ timeout });
         await loc2.click({ timeout, force: true });
         return true;
       }
-    } catch (e) {
-      throw e;
     }
+    // autodetect
+    try {
+      const loc = page.locator(value).first();
+      await loc.waitFor({ timeout });
+      await loc.click({ timeout, force: true });
+      return true;
+    } catch (_) {}
+    try {
+      const loc = page.locator(`xpath=${value}`).first();
+      await loc.waitFor({ timeout });
+      await loc.click({ timeout, force: true });
+      return true;
+    } catch (_) {}
+    // final text fallback
+    const lower = value.toLowerCase().replace(/'/g, "\\'");
+    const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+    const loc2 = page.locator(`xpath=${xp2}`).first();
+    await loc2.waitFor({ timeout });
+    await loc2.click({ timeout, force: true });
+    return true;
   }
 
   async function trySelector(selRaw, config = {}) {
@@ -410,7 +421,7 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     const recovery = Array.isArray(config.recoverySelectors) ? config.recoverySelectors : [];
     let lastError = null;
 
-    // detect type and value
+    // detect type/value
     let type = null, value = selRaw;
     if (/^css:/.test(selRaw)) { type = 'css'; value = selRaw.replace(/^css:/,'').trim(); }
     else if (/^xpath:/.test(selRaw)) { type = 'xpath'; value = selRaw.replace(/^xpath:/,'').trim(); }
@@ -419,19 +430,17 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
 
     for (let i=0;i<attempts;i++){
       try {
+        // try scroll into view
         try {
           if (type === 'css') {
             const loc = page.locator(value).first();
             await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
-          } else if (type === 'xpath' || type === 'text' || !type) {
-            const selForWait = type === 'xpath' ? `xpath=${value}` : (type === 'text' ? `xpath=//*[contains(normalize-space(string(.)),'${String(value).toLowerCase()}')]` : value);
-            try {
-              const loc = page.locator(selForWait).first();
-              await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
-            } catch (_) {}
+          } else {
+            const selForWait = type === 'xpath' ? `xpath=${value}` : (type === 'text' ? `xpath=${value}` : value);
+            const loc = page.locator(selForWait).first();
+            await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
           }
         } catch (_) {}
-
         await singleClickAttempt({ type, value, timeout });
         return { ok:true, attempt:i+1 };
       } catch (e) {
@@ -443,12 +452,9 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     // recovery attempts
     for (const r of recovery) {
       try {
-        try { await singleClickAttempt({ type: /^css:|^xpath:|^text:/.test(r) ? null : 'css', value: r, timeout: Math.min(3000, timeout) }); }
-        catch (_) {
-          try { await singleClickAttempt({ type: null, value: r, timeout: Math.min(3000, timeout) }); } catch(_) {}
-        }
+        try { await singleClickAttempt({ type: null, value: r, timeout: Math.min(3000, timeout) }); } catch(_) {}
+        await sleep(250);
         try {
-          await sleep(250);
           await singleClickAttempt({ type, value, timeout });
           return { ok:true, recovered:true };
         } catch (e2) {
@@ -487,7 +493,7 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
 
   for (const step of flowSteps) {
     if (getSession(sessionId).abort) throw new Error('ABORTED');
-    const label = step.label || step.selector || step.text || 'step';
+    const label = step.label || step.selector || 'step';
     sseSend(sessionId, 'log', { step: label });
 
     const selectors = Array.isArray(step.selectors) ? step.selectors : (step.selector ? [step.selector] : []);
@@ -530,7 +536,7 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     await sleep(Number(step.waitMs || perActionDelay) + Math.floor(Math.random()*350));
   }
 }
-// ===== end runFlowOnPage =====
+// ===== end robust runFlowOnPage =====
 
 // helper to make a compact snippet (non-sensitive)
 function makeSnippetFromKv(line, kv) {
@@ -633,9 +639,6 @@ async function reportRunner(sessionId, opts = {}) {
         sess.currentContext = context;
         sess.currentPage = page;
 
-        // attach live preview for this page (SSE)
-        try { attachLivePreview(sessionId, page, { intervalMs: opts.previewIntervalMs || 3000 }); } catch(_) {}
-
         simpleLog('page-created-for-account', accId);
 
         const pwCookies = accountCookies.map(c => ({
@@ -660,7 +663,19 @@ async function reportRunner(sessionId, opts = {}) {
         }
 
         await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
-        try { const curUrl = await page.url(); simpleLog('Page navigated', { account: accId, url: curUrl }); sseSend(sessionId,'info',{msg:'page-url',url:curUrl}); } catch(e){}
+        try {
+          const curUrl = await page.url();
+          simpleLog('Page navigated', { account: accId, url: curUrl });
+          // send both info log and a dedicated page-url event so UI updates
+          sseSend(sessionId,'info',{msg:'page-url',url:curUrl});
+          sseSend(sessionId,'page-url',{url:curUrl});
+        } catch(e){}
+
+        // attach live preview (sends screenshots via SSE screenshot event)
+        try {
+          attachLivePreview(sessionId, page, { intervalMs: 3000 });
+          sseSend(sessionId, 'log', { msg: 'attached live preview' });
+        } catch (e) { simpleLog('attach-live-preview-failed', e && e.message); }
 
         await page.waitForTimeout(1200 + Math.floor(Math.random()*800));
 
@@ -676,9 +691,9 @@ async function reportRunner(sessionId, opts = {}) {
         try { await context.close(); } catch(e){}
         // clear preview interval for this page if any
         try {
-          if (sess.previewIntervals && page && sess.previewIntervals.has(page)) {
-            try { clearInterval(sess.previewIntervals.get(page)); } catch(_) {}
-            try { sess.previewIntervals.delete(page); } catch(_) {}
+          if (sess.previewIntervals && sess.previewIntervals.has(page)) {
+            clearInterval(sess.previewIntervals.get(page));
+            sess.previewIntervals.delete(page);
           }
         } catch(_) {}
 
@@ -690,11 +705,11 @@ async function reportRunner(sessionId, opts = {}) {
         sseSend(sessionId,'error',{account: accId, error: err && err.message ? err.message : String(err)});
         try { if (page) await page.close(); } catch(e){}
         try { if (context) await context.close(); } catch(e){}
-        // clear preview interval on error
+        // cleanup preview interval for failed page
         try {
-          if (sess.previewIntervals && page && sess.previewIntervals.has(page)) {
-            try { clearInterval(sess.previewIntervals.get(page)); } catch(_) {}
-            try { sess.previewIntervals.delete(page); } catch(_) {}
+          if (sess.previewIntervals && sess.previewIntervals.has(page)) {
+            clearInterval(sess.previewIntervals.get(page));
+            sess.previewIntervals.delete(page);
           }
         } catch(_) {}
 
@@ -713,21 +728,13 @@ async function reportRunner(sessionId, opts = {}) {
       if (browser) {
         try { await browser.close(); } catch (e) { simpleLog('browser-close-final', e && e.message); }
       }
-      // clear any remaining preview intervals
-      try {
-        if (sess.previewIntervals) {
-          for (const [p, iid] of sess.previewIntervals.entries()) {
-            try { clearInterval(iid); } catch(_) {}
-          }
-          sess.previewIntervals.clear();
-        }
-      } catch (e) { simpleLog('preview-clear-final', e && e.message); }
-
       sess.browser = null;
       sess.contexts = [];
       sess.pages = [];
       sess.currentPage = null;
       sess.currentContext = null;
+      // clear any preview intervals
+      clearAllPreviewsForSession(sessionId);
       sseSend(sessionId, 'done', { msg: 'Runner finished' });
     } catch (e) {
       sseSend(sessionId, 'fatal', { msg: e && e.message ? e.message : String(e) });
@@ -1002,17 +1009,8 @@ app.post('/stop', requireAdmin, async (req, res) => {
     for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
     sess.contexts = [];
     if (sess.browser) { try { await sess.browser.close(); } catch(e) {} sess.browser = null; }
-
-    // clear preview intervals for this session (if any)
-    try {
-      if (sess.previewIntervals) {
-        for (const [p, iid] of sess.previewIntervals.entries()) {
-          try { clearInterval(iid); } catch(_) {}
-        }
-        sess.previewIntervals.clear();
-      }
-    } catch (e) { simpleLog('preview-clear-stop-err', e && e.message); }
-
+    // clear preview intervals
+    clearAllPreviewsForSession(sessionId);
   } catch (e) { simpleLog('stop-cleanup-error', e && e.message); }
   return res.json({ ok:true, message:'Stop requested and cleanup attempted' });
 });
@@ -1057,16 +1055,7 @@ async function gracefulShutdown() {
       for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
       for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
       if (sess.browser) { try { await sess.browser.close(); } catch(e) {} }
-
-      // clear preview intervals
-      try {
-        if (sess.previewIntervals) {
-          for (const [p,iid] of sess.previewIntervals.entries()) {
-            try { clearInterval(iid); } catch(_) {}
-          }
-          sess.previewIntervals.clear();
-        }
-      } catch(_) {}
+      clearAllPreviewsForSession(sid);
     } catch (e) {}
   }
   process.exit(0);
