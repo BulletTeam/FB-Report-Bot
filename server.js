@@ -409,8 +409,9 @@ async function reportRunner(sessionId, opts = {}) {
     if (!found) { sseSend(sessionId,'error',{msg:'Requested set not found'}); sess.running=false; return; }
 
     async function launchBrowser() {
-      return await launchBrowserWithFallback({ headless: !!opts.headless, args: opts.args || [], defaultViewport: opts.defaultViewport });
-    }
+  // Force headless on server environments (Render/CI)
+  return await launchBrowserWithFallback({ headless: true, args: opts.args || [], defaultViewport: opts.defaultViewport });
+}
 
     let browser = await launchBrowser();
     sess.browser = browser;
