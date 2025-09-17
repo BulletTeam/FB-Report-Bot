@@ -1,257 +1,96 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Live Preview - FB Report Bot</title>
-<style>
-  :root{--bg:#0f1720;--panel:#0b1220;--muted:#9aa4b2;--accent:#1f8ef1;--card:#0b1622}
-  html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Arial;background:var(--bg);color:#e6eef6}
-  .wrap{display:flex;height:100%;gap:12px;padding:12px}
-  .left{width:320px;min-width:220px;background:var(--panel);border-radius:8px;padding:12px;box-sizing:border-box}
-  .center{flex:1;background:var(--card);border-radius:8px;padding:12px;display:flex;flex-direction:column;align-items:center;gap:8px;box-sizing:border-box}
-  .right{width:320px;min-width:220px;background:var(--panel);border-radius:8px;padding:12px;box-sizing:border-box;overflow:auto}
-  label{display:block;font-size:12px;color:var(--muted);margin-top:8px;margin-bottom:6px}
-  input[type=text]{width:100%;padding:8px;border-radius:6px;border:1px solid #12202a;background:#071018;color:#dfe9f3}
-  button{padding:8px 10px;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer}
-  .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
-  #preview-img{max-width:412px;width:100%;height:auto;border-radius:6px;border:1px solid rgba(255,255,255,0.03);background:#051018}
-  .meta{width:100%;display:flex;flex-direction:column;gap:6px}
-  .meta .line{font-size:13px;color:#cfe6ff;background:rgba(255,255,255,0.02);padding:8px;border-radius:6px}
-  .log{font-family:monospace;font-size:12px;color:#bcd3ee;white-space:pre-wrap}
-  .small{font-size:12px;color:var(--muted)}
-  .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:middle}
-  .dot-ok{background:#2ecc71}.dot-warn{background:#f39c12}.dot-err{background:#e74c3c}
-  .controls{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-  .log-list{height:calc(100vh - 220px);overflow:auto;padding:8px;background:rgba(255,255,255,0.01);border-radius:6px}
-  .log-item{padding:6px;border-bottom:1px dashed rgba(255,255,255,0.02);font-size:12px;color:#cfe6ff}
-  .muted{color:var(--muted);font-size:12px}
-</style>
+  <meta charset="UTF-8" />
+  <title>Live Preview & Logs</title>
+  <style>
+    body { margin:0; display:flex; height:100vh; font-family:sans-serif; background:#111; color:#eee; }
+    #left { width:250px; padding:10px; background:#222; box-sizing:border-box; }
+    #center { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; }
+    #right { width:350px; background:#000; color:#0f0; font-size:12px; overflow:auto; padding:5px; }
+    button { margin:4px 0; padding:5px 10px; }
+    img { max-width:100%; border:1px solid #444; border-radius:4px; background:#000; }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="left">
-    <h3 style="margin:0 0 8px 0">Live Monitor</h3>
-
-    <label>Admin token</label>
-    <input id="adminToken" type="text" placeholder="Enter ADMIN_TOKEN" />
-
-    <label>Session ID</label>
-    <input id="sessionId" type="text" value="default" />
-
-    <div class="controls">
-      <button id="connectBtn">Connect SSE</button>
-      <button id="disconnectBtn" class="btn-ghost">Disconnect</button>
-    </div>
-
-    <div style="margin-top:12px;">
-      <div class="muted">Connection</div>
-      <div id="connStatus" class="line meta" style="margin-top:6px">Not connected</div>
-    </div>
-
-    <div style="margin-top:12px;">
-      <div class="muted">Current page / activity</div>
-      <div id="currentUrl" class="line meta small">—</div>
-      <div id="lastStep" class="line meta small" style="margin-top:8px">Last step: —</div>
-      <div id="lastEventTime" class="muted" style="margin-top:8px">—</div>
-    </div>
-
-    <div style="margin-top:12px;">
-      <div class="muted">Quick controls</div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button id="btnStart" class="btn-ghost">Start</button>
-        <button id="btnStop" class="btn-ghost">Stop</button>
-      </div>
-      <div class="muted" style="margin-top:8px">Use these buttons only if your server exposes /start and /stop and you have token set in Admin token.</div>
-    </div>
+  <div id="left">
+    <h3>Controls</h3>
+    <label>Admin token:<br><input id="token" type="text" style="width:100%" /></label><br>
+    <label>Session ID:<br><input id="sid" value="default" style="width:100%" /></label><br>
+    <button onclick="connectSSE()">Connect SSE</button>
+    <button onclick="disconnectSSE()">Disconnect</button>
+    <hr>
+    <button onclick="startJob()">Start</button>
+    <button onclick="stopJob()">Stop</button>
+    <p>Current page:<br><span id="pageUrl">-</span></p>
   </div>
 
-  <div class="center">
-    <div style="width:100%;max-width:560px;display:flex;justify-content:center;align-items:center;flex-direction:column">
-      <img id="preview-img" alt="Live preview" src="" />
-      <div style="width:100%;display:flex;justify-content:space-between;align-items:center;margin-top:10px">
-        <div class="small muted">Preview (auto updates ~every 3s)</div>
-        <div class="small muted" id="preview-meta">—</div>
-      </div>
-    </div>
+  <div id="center">
+    <h3>Live Browser Preview</h3>
+    <img id="liveShot" alt="(no screenshot yet)">
   </div>
 
-  <div class="right">
-    <h4 style="margin:0 0 8px 0">Live Logs</h4>
-    <div id="logs" class="log-list"></div>
-  </div>
-</div>
+  <div id="right" id="logs"></div>
 
 <script>
-(function(){
-  const adminInput = document.getElementById('adminToken');
-  const sessionInput = document.getElementById('sessionId');
-  const connectBtn = document.getElementById('connectBtn');
-  const disconnectBtn = document.getElementById('disconnectBtn');
-  const connStatus = document.getElementById('connStatus');
-  const currentUrl = document.getElementById('currentUrl');
-  const lastStep = document.getElementById('lastStep');
-  const logs = document.getElementById('logs');
-  const previewImg = document.getElementById('preview-img');
-  const previewMeta = document.getElementById('preview-meta');
-  const lastEventTime = document.getElementById('lastEventTime');
+let es = null;
 
-  let es = null;
+function log(msg, type="log") {
+  const box = document.getElementById("right");
+  const line = document.createElement("div");
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  line.style.color = type === "warn" ? "orange" : (type==="error"?"red":"#0f0");
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
 
-  function addLog(text, cls) {
-    const el = document.createElement('div');
-    el.className = 'log-item';
-    if (cls) el.style.color = cls;
-    el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
-    logs.prepend(el);
-    // keep only recent 300
-    while (logs.children.length > 400) logs.removeChild(logs.lastChild);
-  }
+function connectSSE() {
+  disconnectSSE();
+  const sid = document.getElementById("sid").value.trim() || "default";
+  const token = document.getElementById("token").value.trim();
+  es = new EventSource(`/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`);
+  
+  es.addEventListener("ready", e=> log("SSE ready: "+e.data));
+  es.addEventListener("log", e=> log("LOG "+e.data));
+  es.addEventListener("warn", e=> log("WARN "+e.data,"warn"));
+  es.addEventListener("error", e=> log("ERROR "+e.data,"error"));
 
-  function setStatus(s) {
-    connStatus.textContent = s;
-  }
-
-  function connect() {
-    const token = (adminInput.value || '').trim();
-    const sid = (sessionInput.value || 'default').trim();
-    if (!token) {
-      alert('Admin token required to connect SSE');
-      return;
-    }
-    if (es) es.close();
-
-    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
-    es = new EventSource(url);
-
-    es.onopen = () => {
-      setStatus('Connected (session: ' + sid + ')');
-      addLog('SSE connected → ' + url, '#9ee7a6');
-    };
-
-    es.onerror = (e) => {
-      setStatus('Connection error / closed');
-      addLog('SSE error or closed', '#f7b0b0');
-    };
-
-    // generic message fallback
-    es.addEventListener('message', (ev) => {
-      handleEvent('message', ev.data);
-    });
-
-    // common event types we expect: ready, log, info, warn, error, screenshot, preview-info, cookieStatus, success, done
-    const types = ['ready','log','info','warn','error','screenshot','preview-info','cookieStatus','success','done'];
-    types.forEach(t => {
-      es.addEventListener(t, (ev) => handleEvent(t, ev.data));
-    });
-
-    disconnectBtn.disabled = false;
-    connectBtn.disabled = true;
-  }
-
-  function disconnect() {
-    if (es) {
-      try { es.close(); } catch(_) {}
-      es = null;
-    }
-    setStatus('Disconnected');
-    addLog('SSE disconnected', '#f6f0b0');
-    connectBtn.disabled = false;
-    disconnectBtn.disabled = true;
-  }
-
-  function handleEvent(type, rawData) {
-    lastEventTime.textContent = 'Last event: ' + new Date().toLocaleTimeString();
-    // data may be JSON or plain string/base64. try parse
-    let data = null;
-    try { data = JSON.parse(rawData); } catch(e) { data = rawData; }
-
-    if (type === 'screenshot') {
-      // server should send { b64, url, ts } but fallback to raw base64
-      let b64 = null, url = null;
-      if (typeof data === 'object' && data !== null) { b64 = data.b64 || data; url = data.url || null; }
-      else if (typeof data === 'string') { b64 = data; }
-      if (b64) {
-        previewImg.src = 'data:image/png;base64,' + b64;
-        previewMeta.textContent = url ? (new URL(url, location.href)).pathname : '';
-        addLog('screenshot received ' + (url ? ('@ ' + url) : ''), '#d0f0ff');
-        currentUrl.textContent = url || currentUrl.textContent || '—';
-      } else {
-        addLog('screenshot event but no data', '#f6d6d6');
-      }
-      return;
-    }
-
-    if (type === 'preview-info') {
-      let url = null;
-      if (typeof data === 'object' && data !== null) url = data.url;
-      else if (typeof data === 'string') url = data;
-      if (url) {
-        currentUrl.textContent = url;
-        previewMeta.textContent = url;
-        addLog('preview-info url: ' + url, '#dfe6ff');
-      }
-      return;
-    }
-
-    // other structured messages (log/info/warn/error)
-    if (typeof data === 'object' && data !== null) {
-      // common keys: step, msg, url, account, reason
-      if (data.step) {
-        lastStep.textContent = 'Last step: ' + data.step;
-      }
-      if (data.msg && typeof data.msg === 'string') {
-        addLog(type + ' → ' + data.msg + (data.url ? (' @ ' + data.url) : ''), type === 'error' ? '#ffb6b6' : (type === 'warn' ? '#ffd8a8' : '#cfefff'));
-      } else {
-        addLog(type + ' → ' + JSON.stringify(data), '#cfefff');
-      }
-      if (data.url) currentUrl.textContent = data.url;
-      return;
-    }
-
-    // plain string fallback
-    addLog(type + ' → ' + String(data), '#cfefff');
-  }
-
-  // basic start/stop POST (optional)
-  document.getElementById('btnStart').addEventListener('click', async () => {
-    const token = (adminInput.value || '').trim();
-    const sid = (sessionInput.value || 'default').trim();
-    const target = prompt('Target URL to run (e.g. https://www.facebook.com/p/... )','');
-    if (!token || !target) return alert('adminToken & target required');
-    try {
-      const r = await fetch('/start', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'x-admin-token': token },
-        body: JSON.stringify({ sessionId: sid, targetUrl: target })
-      });
-      const j = await r.json();
-      addLog('start → ' + JSON.stringify(j), '#d0ffd0');
-    } catch (e) { addLog('start error: ' + e, '#ffb6b6'); }
+  es.addEventListener("page-url", e=>{
+    try { const d = JSON.parse(e.data); document.getElementById("pageUrl").textContent = d.url || e.data; } catch { document.getElementById("pageUrl").textContent=e.data; }
   });
 
-  document.getElementById('btnStop').addEventListener('click', async () => {
-    const token = (adminInput.value || '').trim();
-    const sid = (sessionInput.value || 'default').trim();
-    if (!token) return alert('adminToken required');
+  es.addEventListener("screenshot", e=>{
     try {
-      const r = await fetch('/stop', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'x-admin-token': token },
-        body: JSON.stringify({ sessionId: sid })
-      });
-      const j = await r.json();
-      addLog('stop → ' + JSON.stringify(j), '#ffd0d0');
-    } catch (e) { addLog('stop error: ' + e, '#ffb6b6'); }
+      const d = JSON.parse(e.data);
+      if (d && d.b64) document.getElementById("liveShot").src = "data:image/png;base64,"+d.b64;
+    } catch {}
   });
 
-  connectBtn.addEventListener('click', connect);
-  disconnectBtn.addEventListener('click', disconnect);
-  // default UI state
-  disconnectBtn.disabled = true;
-  setStatus('Idle - not connected');
+  log("Connecting SSE…");
+}
 
-})();
+function disconnectSSE() {
+  if (es) { es.close(); es=null; log("SSE disconnected"); }
+}
+
+async function startJob() {
+  const sid = document.getElementById("sid").value.trim() || "default";
+  const token = document.getElementById("token").value.trim();
+  const targetUrl = prompt("Enter target URL:");
+  const res = await fetch("/start", {
+    method:"POST", headers:{ "Content-Type":"application/json","x-admin-token":token },
+    body: JSON.stringify({ sessionId:sid, targetUrl })
+  });
+  log("Start response: "+res.status);
+}
+
+async function stopJob() {
+  const sid = document.getElementById("sid").value.trim() || "default";
+  const token = document.getElementById("token").value.trim();
+  await fetch("/stop", { method:"POST", headers:{ "Content-Type":"application/json","x-admin-token":token },
+    body: JSON.stringify({ sessionId:sid }) });
+  log("Stop requested");
+}
 </script>
 </body>
 </html>
