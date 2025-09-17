@@ -246,21 +246,9 @@ function requireAdmin(req, res, next) {
 // SSE sessions
 const sessions = new Map();
 function getSession(sid = 'default') {
-if (!sessions.has(sid)) {
-  sessions.set(sid, {
-    clients: new Set(),
-    running: false,
-    abort: false,
-    emitter: new EventEmitter(),
-    logs: [],
-    browser: null,
-    contexts: [],
-    pages: [],
-    currentPage: null,
-    currentContext: null,
-    previewIntervals: new Map() // <-- store page => intervalId
-  });
-}
+  if (!sessions.has(sid)) {
+    sessions.set(sid, { clients: new Set(), running: false, abort: false, emitter: new EventEmitter(), logs: [], browser: null, contexts: [], pages: [], currentPage: null, currentContext: null, previewIntervals: new Map() });
+  }
   return sessions.get(sid);
 }
 function sseSend(sid, event, payload) {
@@ -277,31 +265,40 @@ function sseSend(sid, event, payload) {
   }
 }
 
-// attach live screenshot streaming for a page; returns intervalId
+// attach live preview for a page
 function attachLivePreview(sessionId, page, opts = {}) {
-  const intervalMs = opts.intervalMs || 3000; // প্রতি 3 সেকেন্ডে
+  const intervalMs = opts.intervalMs || 3000; // default 3s
   const sess = getSession(sessionId);
+  if (!sess.previewIntervals) sess.previewIntervals = new Map();
+
+  // avoid duplicate attach for same page
+  if (sess.previewIntervals.has(page)) return sess.previewIntervals.get(page);
+
   const id = setInterval(async () => {
     try {
-      if (!page || page.isClosed && page.isClosed()) {
-        // if page closed, clear interval
-        clearInterval(id);
-        if (sess && sess.previewIntervals) sess.previewIntervals.delete(page);
-        return;
-      }
-      const buf = await page.screenshot({ fullPage: false }).catch(() => null);
+      // if page closed, clear interval
+      try {
+        if (!page || (typeof page.isClosed === 'function' && page.isClosed())) {
+          clearInterval(id);
+          sess.previewIntervals.delete(page);
+          return;
+        }
+      } catch (_) {}
+
+      let buf = null;
+      try {
+        buf = await page.screenshot({ fullPage: false });
+      } catch (_) { buf = null; }
+
       if (buf) {
-        // send base64 over SSE using existing sseSend
-        sseSend(sessionId, 'screenshot', buf.toString('base64'));
+        sseSend(sessionId, 'screenshot', { b64: buf.toString('base64'), ts: Date.now() });
       }
     } catch (e) {
-      // don't crash; just log and continue
       simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
     }
   }, intervalMs);
 
-  // store interval id so we can clear later
-  try { if (sess && sess.previewIntervals) sess.previewIntervals.set(page, id); } catch(_) {}
+  sess.previewIntervals.set(page, id);
   return id;
 }
 
@@ -345,30 +342,13 @@ function loadCookieAccountsFromFile() {
   return out;
 }
 
-// click helpers
-async function tryClickCss(page, sel, timeout = 3000) {
-  try {
-    await page.waitForSelector(sel, { timeout });
-    await page.click(sel, { force: true, timeout });
-    return true;
-  } catch (e) { return false; }
-}
-async function tryClickXpath(page, sel, timeout = 3000) {
-  try {
-    const el = await page.waitForXPath(sel, { timeout });
-    if (!el) throw new Error('no-el-xpath');
-    await el.click({ timeout });
-    return true;
-  } catch (e) { return false; }
-}
-
 // ===== Playwright-robust runFlowOnPage with retries, recovery & postCheck =====
 async function runFlowOnPage(page, flowSteps, opts = {}) {
   const { sessionId='default', perActionDelay=1100, actionTimeout=15000, maxAttempts=3 } = opts;
 
   function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-  // low-level single-attempt click (tries locator, elementHandle, evaluate)
+  // low-level single-attempt click (tries locator / text / xpath)
   async function singleClickAttempt({ type, value, timeout }) {
     try {
       if (type === 'css') {
@@ -384,14 +364,12 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         return true;
       }
       if (type === 'text') {
-        // Try Playwright's text helper
         try {
           const byText = page.getByText(value, { exact: false }).first();
           await byText.waitFor({ timeout });
           await byText.click({ timeout, force: true });
           return true;
         } catch (_) {
-          // fallback to case-insensitive xpath
           const lower = value.toLowerCase().replace(/'/g, "\\'");
           const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
           const loc2 = page.locator(`xpath=${xp}`).first();
@@ -400,23 +378,20 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
           return true;
         }
       }
-      // no prefix: prefer css then xpath then text
+      // autodetect: css -> xpath -> text
       if (!type) {
-        // try css
         try {
           const loc = page.locator(value).first();
           await loc.waitFor({ timeout });
           await loc.click({ timeout, force: true });
           return true;
         } catch (_) {}
-        // try xpath
         try {
           const loc = page.locator(`xpath=${value}`).first();
           await loc.waitFor({ timeout });
           await loc.click({ timeout, force: true });
           return true;
         } catch (_) {}
-        // fallback text (case-insensitive)
         const lower = value.toLowerCase().replace(/'/g, "\\'");
         const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
         const loc2 = page.locator(`xpath=${xp2}`).first();
@@ -425,12 +400,10 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         return true;
       }
     } catch (e) {
-      // swallow: caller will handle
       throw e;
     }
   }
 
-  // Try selector with retries + optional recovery attempts
   async function trySelector(selRaw, config = {}) {
     const attempts = config.attempts || maxAttempts;
     const timeout = config.timeout || Math.min(actionTimeout, 7000);
@@ -446,13 +419,11 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
 
     for (let i=0;i<attempts;i++){
       try {
-        // before click: scroll into view if possible
         try {
           if (type === 'css') {
             const loc = page.locator(value).first();
             await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
           } else if (type === 'xpath' || type === 'text' || !type) {
-            // attempt to find locator then scroll
             const selForWait = type === 'xpath' ? `xpath=${value}` : (type === 'text' ? `xpath=//*[contains(normalize-space(string(.)),'${String(value).toLowerCase()}')]` : value);
             try {
               const loc = page.locator(selForWait).first();
@@ -465,20 +436,17 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         return { ok:true, attempt:i+1 };
       } catch (e) {
         lastError = e;
-        // small jittered backoff
         await sleep(300 + Math.floor(Math.random()*300));
       }
     }
 
-    // recovery: try to click recovery selectors (open menu etc) then one more attempt
+    // recovery attempts
     for (const r of recovery) {
       try {
         try { await singleClickAttempt({ type: /^css:|^xpath:|^text:/.test(r) ? null : 'css', value: r, timeout: Math.min(3000, timeout) }); }
         catch (_) {
-          // try with autodetect
           try { await singleClickAttempt({ type: null, value: r, timeout: Math.min(3000, timeout) }); } catch(_) {}
         }
-        // after recovery, try original once
         try {
           await sleep(250);
           await singleClickAttempt({ type, value, timeout });
@@ -486,17 +454,15 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         } catch (e2) {
           lastError = e2;
         }
-      } catch (_) { /* continue recovery list */ }
+      } catch (_) {}
     }
 
     return { ok:false, error: lastError };
   }
 
-  // Optional simple post-check: accepts a check selector similar to step.postCheck (css/xpath/text)
   async function postCheckOk(check) {
     if (!check) return true;
     try {
-      // normalize check like selectors above
       if (/^css:/.test(check)) {
         await page.waitForSelector(check.replace(/^css:/,''), { timeout: 3000 });
         return true;
@@ -505,13 +471,11 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
         return true;
       } else if (/^text:/.test(check)) {
         const txt = check.replace(/^text:/,'').trim();
-        // case-insensitive xpath check
         const lower = txt.toLowerCase().replace(/'/g,"\\'");
         const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
         await page.waitForSelector(`xpath=${xp}`, { timeout: 3000 });
         return true;
       } else {
-        // try as css then text xpath
         try { await page.waitForSelector(check, { timeout: 2500 }); return true; } catch(_) {}
         const lower = String(check).toLowerCase().replace(/'/g,"\\'");
         const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
@@ -521,22 +485,20 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     } catch (e) { return false; }
   }
 
-  // Main loop
   for (const step of flowSteps) {
     if (getSession(sessionId).abort) throw new Error('ABORTED');
-    const label = step.label || step.selector || 'step';
+    const label = step.label || step.selector || step.text || 'step';
     sseSend(sessionId, 'log', { step: label });
 
     const selectors = Array.isArray(step.selectors) ? step.selectors : (step.selector ? [step.selector] : []);
     const attemptsForStep = step.attempts || maxAttempts;
-    const recoverySelectors = step.recoverySelectors || []; // put array in flows if desired
+    const recoverySelectors = step.recoverySelectors || [];
     const mandatory = !!step.mandatory;
     const postCheck = step.postCheck || null;
 
     let stepOk = false;
     let lastDetail = null;
 
-    // try each selector variant until one succeeds
     for (const sel of selectors) {
       const res = await trySelector(sel, { attempts: attemptsForStep, timeout: Math.min(actionTimeout, 8000), recoverySelectors });
       if (res.ok) { stepOk = true; lastDetail = res; break; }
@@ -546,7 +508,6 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     if (stepOk && postCheck) {
       const ok = await postCheckOk(postCheck);
       if (!ok) {
-        // try a couple of short retries if postCheck fails
         let pcOk = false;
         for (let r=0;r<2 && !pcOk;r++) {
           await sleep(300);
@@ -562,16 +523,14 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
     if (!stepOk) {
       sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found-or-postcheck-failed', detail: (lastDetail && lastDetail.error) ? (lastDetail.error.message || String(lastDetail.error)) : JSON.stringify(lastDetail) });
       if (mandatory) throw new Error(`Mandatory step failed: ${label}`);
-      // skip to next step (non-blocking)
     } else {
       sseSend(sessionId, 'log', { step: label, ok: true, detail: lastDetail });
     }
 
-    // polite pause
     await sleep(Number(step.waitMs || perActionDelay) + Math.floor(Math.random()*350));
-  } // end steps
+  }
 }
-// ===== end robust runFlowOnPage =====
+// ===== end runFlowOnPage =====
 
 // helper to make a compact snippet (non-sensitive)
 function makeSnippetFromKv(line, kv) {
@@ -623,9 +582,9 @@ async function reportRunner(sessionId, opts = {}) {
     if (!found) { sseSend(sessionId,'error',{msg:'Requested set not found'}); sess.running=false; return; }
 
     async function launchBrowser() {
-  // Force headless on server environments (Render/CI)
-  return await launchBrowserWithFallback({ headless: true, args: opts.args || [], defaultViewport: opts.defaultViewport });
-}
+      // Force headless on server environments (Render/CI)
+      return await launchBrowserWithFallback({ headless: true, args: opts.args || [], defaultViewport: opts.defaultViewport });
+    }
 
     let browser = await launchBrowser();
     sess.browser = browser;
@@ -674,6 +633,9 @@ async function reportRunner(sessionId, opts = {}) {
         sess.currentContext = context;
         sess.currentPage = page;
 
+        // attach live preview for this page (SSE)
+        try { attachLivePreview(sessionId, page, { intervalMs: opts.previewIntervalMs || 3000 }); } catch(_) {}
+
         simpleLog('page-created-for-account', accId);
 
         const pwCookies = accountCookies.map(c => ({
@@ -712,6 +674,14 @@ async function reportRunner(sessionId, opts = {}) {
 
         try { await page.close(); } catch(e){}
         try { await context.close(); } catch(e){}
+        // clear preview interval for this page if any
+        try {
+          if (sess.previewIntervals && page && sess.previewIntervals.has(page)) {
+            try { clearInterval(sess.previewIntervals.get(page)); } catch(_) {}
+            try { sess.previewIntervals.delete(page); } catch(_) {}
+          }
+        } catch(_) {}
+
         sess.pages = sess.pages.filter(p => p !== page);
         sess.contexts = sess.contexts.filter(c => c !== context);
         sess.currentPage = null;
@@ -720,6 +690,14 @@ async function reportRunner(sessionId, opts = {}) {
         sseSend(sessionId,'error',{account: accId, error: err && err.message ? err.message : String(err)});
         try { if (page) await page.close(); } catch(e){}
         try { if (context) await context.close(); } catch(e){}
+        // clear preview interval on error
+        try {
+          if (sess.previewIntervals && page && sess.previewIntervals.has(page)) {
+            try { clearInterval(sess.previewIntervals.get(page)); } catch(_) {}
+            try { sess.previewIntervals.delete(page); } catch(_) {}
+          }
+        } catch(_) {}
+
         sess.pages = sess.pages.filter(p => p !== page);
         sess.contexts = sess.contexts.filter(c => c !== context);
         sess.currentPage = null;
@@ -735,6 +713,16 @@ async function reportRunner(sessionId, opts = {}) {
       if (browser) {
         try { await browser.close(); } catch (e) { simpleLog('browser-close-final', e && e.message); }
       }
+      // clear any remaining preview intervals
+      try {
+        if (sess.previewIntervals) {
+          for (const [p, iid] of sess.previewIntervals.entries()) {
+            try { clearInterval(iid); } catch(_) {}
+          }
+          sess.previewIntervals.clear();
+        }
+      } catch (e) { simpleLog('preview-clear-final', e && e.message); }
+
       sess.browser = null;
       sess.contexts = [];
       sess.pages = [];
@@ -864,7 +852,6 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
       const line = lines[i];
       try {
         const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
-        // makeSnippetFromKv is defined above in your file; fall back to simple mask if not present
         const snippet = (typeof makeSnippetFromKv === 'function') ? makeSnippetFromKv(line, kv) : (line.length > 60 ? line.slice(0,40) + '...' : line);
         const summary = { lineIndex: i + 1, snippet, hasCUser, hasXs, isAccount };
 
@@ -1015,6 +1002,17 @@ app.post('/stop', requireAdmin, async (req, res) => {
     for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
     sess.contexts = [];
     if (sess.browser) { try { await sess.browser.close(); } catch(e) {} sess.browser = null; }
+
+    // clear preview intervals for this session (if any)
+    try {
+      if (sess.previewIntervals) {
+        for (const [p, iid] of sess.previewIntervals.entries()) {
+          try { clearInterval(iid); } catch(_) {}
+        }
+        sess.previewIntervals.clear();
+      }
+    } catch (e) { simpleLog('preview-clear-stop-err', e && e.message); }
+
   } catch (e) { simpleLog('stop-cleanup-error', e && e.message); }
   return res.json({ ok:true, message:'Stop requested and cleanup attempted' });
 });
@@ -1059,6 +1057,16 @@ async function gracefulShutdown() {
       for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
       for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
       if (sess.browser) { try { await sess.browser.close(); } catch(e) {} }
+
+      // clear preview intervals
+      try {
+        if (sess.previewIntervals) {
+          for (const [p,iid] of sess.previewIntervals.entries()) {
+            try { clearInterval(iid); } catch(_) {}
+          }
+          sess.previewIntervals.clear();
+        }
+      } catch(_) {}
     } catch (e) {}
   }
   process.exit(0);
