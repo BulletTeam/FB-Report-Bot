@@ -1,96 +1,213 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Live Preview & Logs</title>
+  <meta charset="utf-8" />
+  <title>Live Preview</title>
   <style>
-    body { margin:0; display:flex; height:100vh; font-family:sans-serif; background:#111; color:#eee; }
-    #left { width:250px; padding:10px; background:#222; box-sizing:border-box; }
-    #center { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; }
-    #right { width:350px; background:#000; color:#0f0; font-size:12px; overflow:auto; padding:5px; }
-    button { margin:4px 0; padding:5px 10px; }
-    img { max-width:100%; border:1px solid #444; border-radius:4px; background:#000; }
+    body { font-family: Arial, Helvetica, sans-serif; margin:0; padding:0; background:#111; color:#ddd; }
+    .wrap { display:flex; height:100vh; }
+    .col { padding:10px; }
+    .left { width:260px; background:#222; }
+    .center { flex:1; display:flex; align-items:center; justify-content:center; background:#0e0e0e; }
+    .right { width:360px; background:#0b0b0b; overflow:auto; font-family:monospace; font-size:12px; color:#0f0; padding:8px; }
+    input, button { width:100%; box-sizing:border-box; margin:6px 0; padding:8px; background:#111; color:#fff; border:1px solid #333; }
+    #screenshot { max-width:100%; max-height:80vh; border:1px solid #333; background:#000; display:block; }
+    .label { color:#aaa; font-size:12px; margin-top:8px; }
+    .logline { color:#9f9; margin-bottom:6px; white-space:pre-wrap; }
+    .warn { color:#ffb86b; }
+    .err { color:#ff6b6b; color: #ff8080; }
+    .info { color:#9fd0ff; }
   </style>
 </head>
 <body>
-  <div id="left">
-    <h3>Controls</h3>
-    <label>Admin token:<br><input id="token" type="text" style="width:100%" /></label><br>
-    <label>Session ID:<br><input id="sid" value="default" style="width:100%" /></label><br>
-    <button onclick="connectSSE()">Connect SSE</button>
-    <button onclick="disconnectSSE()">Disconnect</button>
-    <hr>
-    <button onclick="startJob()">Start</button>
-    <button onclick="stopJob()">Stop</button>
-    <p>Current page:<br><span id="pageUrl">-</span></p>
-  </div>
+  <div class="wrap">
+    <div class="col left">
+      <div class="label">Admin token:</div>
+      <input id="adminToken" placeholder="ADMIN_TOKEN" value="">
+      <div class="label">Session ID:</div>
+      <input id="sessionId" value="default">
+      <button id="connectBtn">Connect SSE</button>
+      <button id="disconnectBtn">Disconnect</button>
 
-  <div id="center">
-    <h3>Live Browser Preview</h3>
-    <img id="liveShot" alt="(no screenshot yet)">
-  </div>
+      <div class="label">Target URL (target):</div>
+      <input id="targetUrl" placeholder="https://m.facebook.com/..." value="">
 
-  <div id="right" id="logs"></div>
+      <button id="startBtn">Start</button>
+      <button id="stopBtn">Stop</button>
+
+      <div class="label">Current page:</div>
+      <div id="currentPage">-</div>
+    </div>
+
+    <div class="col center">
+      <div style="text-align:center; width:100%;">
+        <div style="color:#bbb; margin-bottom:8px;">Live Browser Preview</div>
+        <img id="screenshot" alt="(no screenshot yet)">
+      </div>
+    </div>
+
+    <div class="col right">
+      <div id="log"></div>
+    </div>
+  </div>
 
 <script>
-let es = null;
+(function(){
+  const adminEl = document.getElementById('adminToken');
+  const sessionEl = document.getElementById('sessionId');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const targetEl = document.getElementById('targetUrl');
+  const img = document.getElementById('screenshot');
+  const logEl = document.getElementById('log');
+  const currentPageEl = document.getElementById('currentPage');
 
-function log(msg, type="log") {
-  const box = document.getElementById("right");
-  const line = document.createElement("div");
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  line.style.color = type === "warn" ? "orange" : (type==="error"?"red":"#0f0");
-  box.appendChild(line);
-  box.scrollTop = box.scrollHeight;
-}
+  let es = null;
 
-function connectSSE() {
-  disconnectSSE();
-  const sid = document.getElementById("sid").value.trim() || "default";
-  const token = document.getElementById("token").value.trim();
-  es = new EventSource(`/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`);
-  
-  es.addEventListener("ready", e=> log("SSE ready: "+e.data));
-  es.addEventListener("log", e=> log("LOG "+e.data));
-  es.addEventListener("warn", e=> log("WARN "+e.data,"warn"));
-  es.addEventListener("error", e=> log("ERROR "+e.data,"error"));
+  function addLog(msg, cls) {
+    const d = new Date().toLocaleTimeString();
+    const el = document.createElement('div');
+    el.className = 'logline ' + (cls||'');
+    el.textContent = `[${d}] ${msg}`;
+    logEl.prepend(el);
+    // keep max 200 lines
+    while (logEl.children.length > 500) logEl.removeChild(logEl.lastChild);
+  }
 
-  es.addEventListener("page-url", e=>{
-    try { const d = JSON.parse(e.data); document.getElementById("pageUrl").textContent = d.url || e.data; } catch { document.getElementById("pageUrl").textContent=e.data; }
-  });
+  function connectSSE() {
+    const admin = adminEl.value.trim();
+    const sid = sessionEl.value.trim() || 'default';
+    if (!admin) { alert('Admin token required'); return; }
 
-  es.addEventListener("screenshot", e=>{
+    // events endpoint with adminToken as query (server accepts header OR query)
+    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(admin)}`;
     try {
-      const d = JSON.parse(e.data);
-      if (d && d.b64) document.getElementById("liveShot").src = "data:image/png;base64,"+d.b64;
-    } catch {}
-  });
+      if (es && es.close) es.close();
+      es = new EventSource(url, { withCredentials: false });
+    } catch(e) {
+      addLog('EventSource create failed: '+e.message, 'err');
+      return;
+    }
 
-  log("Connecting SSE…");
-}
+    es.addEventListener('open', () => { addLog('SSE open', 'info'); });
+    es.addEventListener('error', (e) => { addLog('SSE error', 'err'); /* don't auto-reconnect here */ });
 
-function disconnectSSE() {
-  if (es) { es.close(); es=null; log("SSE disconnected"); }
-}
+    es.addEventListener('ready', (ev) => {
+      addLog('SSE ready: ' + ev.data, 'info');
+    });
 
-async function startJob() {
-  const sid = document.getElementById("sid").value.trim() || "default";
-  const token = document.getElementById("token").value.trim();
-  const targetUrl = prompt("Enter target URL:");
-  const res = await fetch("/start", {
-    method:"POST", headers:{ "Content-Type":"application/json","x-admin-token":token },
-    body: JSON.stringify({ sessionId:sid, targetUrl })
-  });
-  log("Start response: "+res.status);
-}
+    es.addEventListener('log', (ev) => {
+      try { const p = JSON.parse(ev.data); addLog('log: ' + JSON.stringify(p)); }
+      catch(_) { addLog('log: ' + ev.data); }
+    });
 
-async function stopJob() {
-  const sid = document.getElementById("sid").value.trim() || "default";
-  const token = document.getElementById("token").value.trim();
-  await fetch("/stop", { method:"POST", headers:{ "Content-Type":"application/json","x-admin-token":token },
-    body: JSON.stringify({ sessionId:sid }) });
-  log("Stop requested");
-}
+    es.addEventListener('info', (ev) => {
+      try { const p = JSON.parse(ev.data); addLog('info: ' + JSON.stringify(p), 'info'); }
+      catch(_) { addLog('info: ' + ev.data, 'info'); }
+    });
+
+    es.addEventListener('warn', (ev) => {
+      try { const p = JSON.parse(ev.data); addLog('warn: ' + JSON.stringify(p), 'warn'); }
+      catch(_) { addLog('warn: ' + ev.data, 'warn'); }
+    });
+
+    es.addEventListener('error', (ev) => {
+      try { const p = JSON.parse(ev.data); addLog('server-error: ' + JSON.stringify(p), 'err'); }
+      catch(_) { addLog('server-error: ' + ev.data, 'err'); }
+    });
+
+    es.addEventListener('page-url', (ev) => {
+      try {
+        const p = JSON.parse(ev.data);
+        const url = p.url || (typeof ev.data === 'string' ? ev.data : '');
+        currentPageEl.textContent = url;
+        addLog('page-url: ' + url, 'info');
+      } catch(e){ addLog('page-url parse error'); }
+    });
+
+    es.addEventListener('screenshot', (ev) => {
+      try {
+        const p = JSON.parse(ev.data);
+        const b64 = p.b64 || (p && p.data) || ev.data;
+        img.src = 'data:image/png;base64,' + b64;
+        addLog('screenshot received', 'info');
+      } catch(e) {
+        addLog('screenshot parse error: ' + e.message, 'err');
+      }
+    });
+
+    es.addEventListener('success', (ev) => {
+      try { addLog('success: ' + ev.data, 'info'); } catch(_) {}
+    });
+
+    es.addEventListener('done', (ev) => {
+      try { addLog('done: ' + ev.data, 'info'); } catch(_) {}
+    });
+
+    addLog('Connecting SSE to ' + url, 'info');
+  }
+
+  function disconnectSSE() {
+    if (es) {
+      try { es.close(); } catch(_) {}
+      es = null;
+      addLog('SSE disconnected', 'info');
+    }
+  }
+
+  async function startRunner() {
+    const admin = adminEl.value.trim();
+    const sid = sessionEl.value.trim() || 'default';
+    const target = targetEl.value.trim();
+    if (!admin) { alert('Admin token required'); return; }
+    if (!target) { alert('Target URL required'); return; }
+
+    addLog('Starting runner for ' + target, 'info');
+
+    try {
+      const resp = await fetch('/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': admin
+        },
+        body: JSON.stringify({ sessionId: sid, targetUrl: target })
+      });
+      const j = await resp.json().catch(()=>null);
+      if (!resp.ok) {
+        addLog('Start response error: ' + (j && j.message ? j.message : resp.statusText), 'err');
+      } else {
+        addLog('Start ok: ' + JSON.stringify(j), 'info');
+      }
+    } catch (e) {
+      addLog('Start request failed: ' + e.message, 'err');
+    }
+  }
+
+  async function stopRunner() {
+    const admin = adminEl.value.trim();
+    const sid = sessionEl.value.trim() || 'default';
+    if (!admin) { alert('Admin token required'); return; }
+    try {
+      const resp = await fetch('/stop', {
+        method:'POST',
+        headers: { 'Content-Type':'application/json', 'x-admin-token': admin },
+        body: JSON.stringify({ sessionId: sid })
+      });
+      const j = await resp.json().catch(()=>null);
+      addLog('Stop response: ' + JSON.stringify(j), 'info');
+    } catch (e) { addLog('Stop request failed: ' + e.message, 'err'); }
+  }
+
+  connectBtn.addEventListener('click', connectSSE);
+  disconnectBtn.addEventListener('click', disconnectSSE);
+  startBtn.addEventListener('click', startRunner);
+  stopBtn.addEventListener('click', stopRunner);
+
+})();
 </script>
+
 </body>
 </html>
