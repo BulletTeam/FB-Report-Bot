@@ -322,166 +322,216 @@ async function tryClickXpath(page, sel, timeout = 3000) {
   } catch (e) { return false; }
 }
 
-// Playwright-compatible runFlowOnPage
+// ===== Playwright-robust runFlowOnPage with retries, recovery & postCheck =====
 async function runFlowOnPage(page, flowSteps, opts = {}) {
-  const { sessionId='default', perActionDelay=1100, actionTimeout=12000 } = opts;
+  const { sessionId='default', perActionDelay=1100, actionTimeout=15000, maxAttempts=3 } = opts;
 
-  // Robust click helper: accepts Locator or ElementHandle
-  async function clickHandle(handle, timeout = 3000) {
+  function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+  // low-level single-attempt click (tries locator, elementHandle, evaluate)
+  async function singleClickAttempt({ type, value, timeout }) {
     try {
-      // Playwright Locator has click(); ElementHandle has click(); try direct
-      if (typeof handle.click === 'function') {
-        await handle.click({ timeout, force: true }).catch(async () => {
-          // sometimes locator.click may fail due to interceptors — fallback to evaluate
-          await page.evaluate(el => (el && el.click && el.click()), handle);
-        });
+      if (type === 'css') {
+        const loc = page.locator(value).first();
+        await loc.waitFor({ timeout });
+        await loc.click({ timeout, force: true });
         return true;
-      } else {
-        // fallback: evaluate click on DOM node (handle might be a JSHandle)
-        await page.evaluate(el => el && el.click && el.click(), handle);
+      }
+      if (type === 'xpath') {
+        const loc = page.locator(`xpath=${value}`).first();
+        await loc.waitFor({ timeout });
+        await loc.click({ timeout, force: true });
+        return true;
+      }
+      if (type === 'text') {
+        // Try Playwright's text helper
+        try {
+          const byText = page.getByText(value, { exact: false }).first();
+          await byText.waitFor({ timeout });
+          await byText.click({ timeout, force: true });
+          return true;
+        } catch (_) {
+          // fallback to case-insensitive xpath
+          const lower = value.toLowerCase().replace(/'/g, "\\'");
+          const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+          const loc2 = page.locator(`xpath=${xp}`).first();
+          await loc2.waitFor({ timeout });
+          await loc2.click({ timeout, force: true });
+          return true;
+        }
+      }
+      // no prefix: prefer css then xpath then text
+      if (!type) {
+        // try css
+        try {
+          const loc = page.locator(value).first();
+          await loc.waitFor({ timeout });
+          await loc.click({ timeout, force: true });
+          return true;
+        } catch (_) {}
+        // try xpath
+        try {
+          const loc = page.locator(`xpath=${value}`).first();
+          await loc.waitFor({ timeout });
+          await loc.click({ timeout, force: true });
+          return true;
+        } catch (_) {}
+        // fallback text (case-insensitive)
+        const lower = value.toLowerCase().replace(/'/g, "\\'");
+        const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        const loc2 = page.locator(`xpath=${xp2}`).first();
+        await loc2.waitFor({ timeout });
+        await loc2.click({ timeout, force: true });
         return true;
       }
     } catch (e) {
-      // last resort: try locator-based clicking if handle.selector is available
-      try {
-        if (handle && handle._selector) {
-          await page.locator(handle._selector).click({ timeout, force: true });
-          return true;
-        }
-      } catch (_) {}
-      return false;
+      // swallow: caller will handle
+      throw e;
     }
   }
 
-  for (const step of flowSteps) {
-    if (getSession(sessionId).abort) throw new Error('ABORTED');
-    const label = step.label || step.selector || step.text || 'step';
-    sseSend(sessionId, 'log', { step: label });
+  // Try selector with retries + optional recovery attempts
+  async function trySelector(selRaw, config = {}) {
+    const attempts = config.attempts || maxAttempts;
+    const timeout = config.timeout || Math.min(actionTimeout, 7000);
+    const recovery = Array.isArray(config.recoverySelectors) ? config.recoverySelectors : [];
+    let lastError = null;
 
-    const sels = Array.isArray(step.selectors) ? step.selectors.slice() : (step.selector ? [step.selector] : []);
-    let success = false;
-    let lastErr = null;
+    // detect type and value
+    let type = null, value = selRaw;
+    if (/^css:/.test(selRaw)) { type = 'css'; value = selRaw.replace(/^css:/,'').trim(); }
+    else if (/^xpath:/.test(selRaw)) { type = 'xpath'; value = selRaw.replace(/^xpath:/,'').trim(); }
+    else if (/^text:/.test(selRaw)) { type = 'text'; value = selRaw.replace(/^text:/,'').trim(); }
+    else { type = null; value = selRaw; }
 
-    for (const rawSel of sels) {
-      if (!rawSel) continue;
-      const sel = String(rawSel).trim();
+    for (let i=0;i<attempts;i++){
       try {
-        // 1) css:...
-        if (/^css:/.test(sel)) {
-          const css = sel.replace(/^css:/, '').trim();
-          try {
-            await page.waitForSelector(css, { timeout: Math.min(actionTimeout, 5000) });
-            await page.locator(css).first().click({ timeout: Math.min(actionTimeout, 5000), force: true });
-            success = true;
-          } catch (e) { lastErr = e; success = false; }
-
-        // 2) xpath:...
-        } else if (/^xpath:/.test(sel)) {
-          const xp = sel.replace(/^xpath:/, '').trim();
-          try {
-            // Playwright supports 'xpath=' prefix for selectors
-            await page.waitForSelector(`xpath=${xp}`, { timeout: Math.min(actionTimeout, 5000) });
-            const locator = page.locator(`xpath=${xp}`).first();
-            success = await (async () => {
-              try { await locator.click({ timeout: Math.min(actionTimeout, 5000), force: true }); return true; }
-              catch (e) {
-                // try element handle then fallback click
-                try {
-                  const handle = await locator.elementHandle();
-                  if (handle) return await clickHandle(handle, Math.min(actionTimeout,5000));
-                } catch(_) {}
-                return false;
-              }
-            })();
-          } catch (e) { lastErr = e; success = false; }
-
-        // 3) text:...
-        } else if (/^text:/.test(sel)) {
-          let txt = sel.replace(/^text:/, '').trim();
-          if (!txt) { lastErr = new Error('empty-text-selector'); success = false; }
-          else {
-            // try Playwright's getByText (case-insensitive-ish) first
+        // before click: scroll into view if possible
+        try {
+          if (type === 'css') {
+            const loc = page.locator(value).first();
+            await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
+          } else if (type === 'xpath' || type === 'text' || !type) {
+            // attempt to find locator then scroll
+            const selForWait = type === 'xpath' ? `xpath=${value}` : (type === 'text' ? `xpath=//*[contains(normalize-space(string(.)),'${String(value).toLowerCase()}')]` : value);
             try {
-              // Use exact:false so partial matches will work
-              const byText = page.getByText(txt, { exact: false });
-              // wait for it
-              await byText.first().waitFor({ timeout: Math.min(actionTimeout, 5000) });
-              await byText.first().click({ timeout: Math.min(actionTimeout, 5000), force: true });
-              success = true;
-            } catch (e) {
-              // fallback: case-insensitive XPath using translate()
-              try {
-                const txtEsc = txt.replace(/'/g, `"`); // crude escaping
-                const lower = txt.toLowerCase();
-                // use translate() to normalize to lowercase for case-insensitive contains
-                const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '${lower}')]`;
-                await page.waitForSelector(`xpath=${xp}`, { timeout: Math.min(actionTimeout, 5000) });
-                const loc = page.locator(`xpath=${xp}`).first();
-                try { await loc.click({ timeout: Math.min(actionTimeout, 5000), force: true }); success = true; }
-                catch (e2) {
-                  const handle = await loc.elementHandle();
-                  if (handle) success = await clickHandle(handle, Math.min(actionTimeout,5000));
-                }
-              } catch (e3) { lastErr = e3; success = false; }
-            }
+              const loc = page.locator(selForWait).first();
+              await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
+            } catch (_) {}
           }
+        } catch (_) {}
 
-        // 4) no prefix: try css -> xpath -> text
-        } else {
-          // try as CSS
-          try {
-            await page.waitForSelector(sel, { timeout: Math.min(actionTimeout, 3000) });
-            await page.locator(sel).first().click({ timeout: Math.min(actionTimeout, 3000), force: true });
-            success = true;
-          } catch (_) {
-            // try as XPath
-            try {
-              const xp = sel;
-              await page.waitForSelector(`xpath=${xp}`, { timeout: Math.min(actionTimeout, 3000) });
-              const loc = page.locator(`xpath=${xp}`).first();
-              try { await loc.click({ timeout: Math.min(actionTimeout, 3000), force: true }); success = true; }
-              catch (e) {
-                const handle = await loc.elementHandle();
-                if (handle) success = await clickHandle(handle, Math.min(actionTimeout,3000));
-              }
-            } catch (_) {
-              // try text fallback (case-insensitive)
-              try {
-                const lower = sel.toLowerCase();
-                const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'), '${lower}')]`;
-                await page.waitForSelector(`xpath=${xp2}`, { timeout: Math.min(actionTimeout, 3000) });
-                const loc2 = page.locator(`xpath=${xp2}`).first();
-                try { await loc2.click({ timeout: Math.min(actionTimeout, 3000), force: true }); success = true; }
-                catch (e) {
-                  const handle = await loc2.elementHandle();
-                  if (handle) success = await clickHandle(handle, Math.min(actionTimeout,3000));
-                }
-              } catch (e) { lastErr = e; success = false; }
-            }
-          }
-        }
+        await singleClickAttempt({ type, value, timeout });
+        return { ok:true, attempt:i+1 };
       } catch (e) {
-        lastErr = e;
-        success = false;
-      }
-
-      if (success) break; // stop trying other selectors for this step
-    } // end selectors loop
-
-    if (!success) {
-      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found', detail: lastErr && lastErr.message ? lastErr.message : String(lastErr) });
-      if (step.mandatory) throw new Error(`Mandatory step failed: ${label}`);
-    } else {
-      sseSend(sessionId, 'log', { step: label, ok: true });
-      // optional wait after success
-      if (step.waitMs && Number(step.waitMs) > 0) {
-        await page.waitForTimeout(Number(step.waitMs));
-      } else {
-        await page.waitForTimeout(perActionDelay + Math.floor(Math.random()*350));
+        lastError = e;
+        // small jittered backoff
+        await sleep(300 + Math.floor(Math.random()*300));
       }
     }
+
+    // recovery: try to click recovery selectors (open menu etc) then one more attempt
+    for (const r of recovery) {
+      try {
+        try { await singleClickAttempt({ type: /^css:|^xpath:|^text:/.test(r) ? null : 'css', value: r, timeout: Math.min(3000, timeout) }); }
+        catch (_) {
+          // try with autodetect
+          try { await singleClickAttempt({ type: null, value: r, timeout: Math.min(3000, timeout) }); } catch(_) {}
+        }
+        // after recovery, try original once
+        try {
+          await sleep(250);
+          await singleClickAttempt({ type, value, timeout });
+          return { ok:true, recovered:true };
+        } catch (e2) {
+          lastError = e2;
+        }
+      } catch (_) { /* continue recovery list */ }
+    }
+
+    return { ok:false, error: lastError };
+  }
+
+  // Optional simple post-check: accepts a check selector similar to step.postCheck (css/xpath/text)
+  async function postCheckOk(check) {
+    if (!check) return true;
+    try {
+      // normalize check like selectors above
+      if (/^css:/.test(check)) {
+        await page.waitForSelector(check.replace(/^css:/,''), { timeout: 3000 });
+        return true;
+      } else if (/^xpath:/.test(check)) {
+        await page.waitForSelector(`xpath=${check.replace(/^xpath:/,'')}`, { timeout: 3000 });
+        return true;
+      } else if (/^text:/.test(check)) {
+        const txt = check.replace(/^text:/,'').trim();
+        // case-insensitive xpath check
+        const lower = txt.toLowerCase().replace(/'/g,"\\'");
+        const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        await page.waitForSelector(`xpath=${xp}`, { timeout: 3000 });
+        return true;
+      } else {
+        // try as css then text xpath
+        try { await page.waitForSelector(check, { timeout: 2500 }); return true; } catch(_) {}
+        const lower = String(check).toLowerCase().replace(/'/g,"\\'");
+        const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        await page.waitForSelector(`xpath=${xp2}`, { timeout: 2500 });
+        return true;
+      }
+    } catch (e) { return false; }
+  }
+
+  // Main loop
+  for (const step of flowSteps) {
+    if (getSession(sessionId).abort) throw new Error('ABORTED');
+    const label = step.label || step.selector || 'step';
+    sseSend(sessionId, 'log', { step: label });
+
+    const selectors = Array.isArray(step.selectors) ? step.selectors : (step.selector ? [step.selector] : []);
+    const attemptsForStep = step.attempts || maxAttempts;
+    const recoverySelectors = step.recoverySelectors || []; // put array in flows if desired
+    const mandatory = !!step.mandatory;
+    const postCheck = step.postCheck || null;
+
+    let stepOk = false;
+    let lastDetail = null;
+
+    // try each selector variant until one succeeds
+    for (const sel of selectors) {
+      const res = await trySelector(sel, { attempts: attemptsForStep, timeout: Math.min(actionTimeout, 8000), recoverySelectors });
+      if (res.ok) { stepOk = true; lastDetail = res; break; }
+      lastDetail = res.error || res;
+    }
+
+    if (stepOk && postCheck) {
+      const ok = await postCheckOk(postCheck);
+      if (!ok) {
+        // try a couple of short retries if postCheck fails
+        let pcOk = false;
+        for (let r=0;r<2 && !pcOk;r++) {
+          await sleep(300);
+          pcOk = await postCheckOk(postCheck);
+        }
+        if (!pcOk) {
+          stepOk = false;
+          lastDetail = { postCheckFailed: true };
+        }
+      }
+    }
+
+    if (!stepOk) {
+      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found-or-postcheck-failed', detail: (lastDetail && lastDetail.error) ? (lastDetail.error.message || String(lastDetail.error)) : JSON.stringify(lastDetail) });
+      if (mandatory) throw new Error(`Mandatory step failed: ${label}`);
+      // skip to next step (non-blocking)
+    } else {
+      sseSend(sessionId, 'log', { step: label, ok: true, detail: lastDetail });
+    }
+
+    // polite pause
+    await sleep(Number(step.waitMs || perActionDelay) + Math.floor(Math.random()*350));
   } // end steps
 }
+// ===== end robust runFlowOnPage =====
 
 // helper to make a compact snippet (non-sensitive)
 function makeSnippetFromKv(line, kv) {
