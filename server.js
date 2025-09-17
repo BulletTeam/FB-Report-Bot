@@ -246,9 +246,21 @@ function requireAdmin(req, res, next) {
 // SSE sessions
 const sessions = new Map();
 function getSession(sid = 'default') {
-  if (!sessions.has(sid)) {
-    sessions.set(sid, { clients: new Set(), running: false, abort: false, emitter: new EventEmitter(), logs: [], browser: null, contexts: [], pages: [], currentPage: null, currentContext: null });
-  }
+if (!sessions.has(sid)) {
+  sessions.set(sid, {
+    clients: new Set(),
+    running: false,
+    abort: false,
+    emitter: new EventEmitter(),
+    logs: [],
+    browser: null,
+    contexts: [],
+    pages: [],
+    currentPage: null,
+    currentContext: null,
+    previewIntervals: new Map() // <-- store page => intervalId
+  });
+}
   return sessions.get(sid);
 }
 function sseSend(sid, event, payload) {
@@ -263,6 +275,34 @@ function sseSend(sid, event, payload) {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     } catch (e) { sess.clients.delete(res); }
   }
+}
+
+// attach live screenshot streaming for a page; returns intervalId
+function attachLivePreview(sessionId, page, opts = {}) {
+  const intervalMs = opts.intervalMs || 3000; // প্রতি 3 সেকেন্ডে
+  const sess = getSession(sessionId);
+  const id = setInterval(async () => {
+    try {
+      if (!page || page.isClosed && page.isClosed()) {
+        // if page closed, clear interval
+        clearInterval(id);
+        if (sess && sess.previewIntervals) sess.previewIntervals.delete(page);
+        return;
+      }
+      const buf = await page.screenshot({ fullPage: false }).catch(() => null);
+      if (buf) {
+        // send base64 over SSE using existing sseSend
+        sseSend(sessionId, 'screenshot', buf.toString('base64'));
+      }
+    } catch (e) {
+      // don't crash; just log and continue
+      simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
+    }
+  }, intervalMs);
+
+  // store interval id so we can clear later
+  try { if (sess && sess.previewIntervals) sess.previewIntervals.set(page, id); } catch(_) {}
+  return id;
 }
 
 // cookie parser helper: returns kv map OR null if not account
