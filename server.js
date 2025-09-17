@@ -322,8 +322,24 @@ async function tryClickXpath(page, sel, timeout = 3000) {
   } catch (e) { return false; }
 }
 
+// Replace your existing runFlowOnPage with this prefix-aware implementation
 async function runFlowOnPage(page, flowSteps, opts = {}) {
   const { sessionId='default', perActionDelay=1100, actionTimeout=12000 } = opts;
+
+  // helper: click element handle safely
+  async function clickHandle(handle, timeout = 3000) {
+    try {
+      await handle.click({ timeout });
+      return true;
+    } catch (e) {
+      try {
+        // fallback: evaluate and call click via DOM
+        await page.evaluate(el => el.click && el.click(), handle);
+        return true;
+      } catch (_) { return false; }
+    }
+  }
+
   for (const step of flowSteps) {
     if (getSession(sessionId).abort) throw new Error('ABORTED');
     const label = step.label || step.selector || step.text || 'step';
@@ -331,32 +347,92 @@ async function runFlowOnPage(page, flowSteps, opts = {}) {
 
     const sels = Array.isArray(step.selectors) ? step.selectors.slice() : (step.selector ? [step.selector] : []);
     let success = false;
+    let lastErr = null;
+
     for (const rawSel of sels) {
       if (!rawSel) continue;
       const sel = String(rawSel).trim();
-      if (/^css:/.test(sel)) {
-        success = await tryClickCss(page, sel.replace(/^css:/,''), Math.min(actionTimeout,6000));
-      } else if (/^xpath:/.test(sel)) {
-        success = await tryClickXpath(page, sel.replace(/^xpath:/,''), Math.min(actionTimeout,6000));
-      } else {
-        success = await tryClickCss(page, sel, 3000);
-        if (!success) success = await tryClickXpath(page, sel, 3000);
+
+      try {
+        if (/^css:/.test(sel)) {
+          const css = sel.replace(/^css:/, '');
+          try {
+            await page.waitForSelector(css, { timeout: Math.min(actionTimeout, 5000) });
+            await page.click(css, { timeout: Math.min(actionTimeout, 5000), force: true });
+            success = true;
+          } catch (e) {
+            lastErr = e;
+            success = false;
+          }
+
+        } else if (/^xpath:/.test(sel)) {
+          const xp = sel.replace(/^xpath:/, '');
+          try {
+            await page.waitForXPath(xp, { timeout: Math.min(actionTimeout, 5000) });
+            const els = await page.$x(xp);
+            if (els && els.length) {
+              success = await clickHandle(els[0], Math.min(actionTimeout, 5000));
+            } else success = false;
+          } catch (e) { lastErr = e; success = false; }
+
+        } else if (/^text:/.test(sel)) {
+          const txt = sel.replace(/^text:/,'').trim().replace(/'/g, "\\'");
+          // XPath that searches for text node containing phrase (case-insensitive-ish via translate)
+          const xp = `//*[contains(normalize-space(string(.)),'${txt}')]`;
+          try {
+            await page.waitForXPath(xp, { timeout: Math.min(actionTimeout, 5000) });
+            const els = await page.$x(xp);
+            if (els && els.length) {
+              success = await clickHandle(els[0], Math.min(actionTimeout, 5000));
+            } else success = false;
+          } catch (e) { lastErr = e; success = false; }
+
+        } else {
+          // no prefix: try css -> xpath -> text
+          try {
+            await page.waitForSelector(sel, { timeout: Math.min(actionTimeout, 3000) });
+            await page.click(sel, { timeout: Math.min(actionTimeout, 3000), force: true });
+            success = true;
+          } catch (_) {
+            try {
+              const xp = sel;
+              await page.waitForXPath(xp, { timeout: Math.min(actionTimeout, 3000) });
+              const els = await page.$x(xp);
+              if (els && els.length) success = await clickHandle(els[0], Math.min(actionTimeout, 3000));
+            } catch (_) {
+              // fallback to text search
+              const txt = sel.replace(/'/g,"\\'");
+              const xp2 = `//*[contains(normalize-space(string(.)),'${txt}')]`;
+              try {
+                await page.waitForXPath(xp2, { timeout: Math.min(actionTimeout, 3000) });
+                const els2 = await page.$x(xp2);
+                if (els2 && els2.length) success = await clickHandle(els2[0], Math.min(actionTimeout, 3000));
+              } catch (e) { lastErr = e; success = false; }
+            }
+          }
+        }
+      } catch (e) {
+        // log internal error but continue trying other selectors
+        lastErr = e;
+        success = false;
       }
+
       if (success) break;
-    }
-    if (!success && step.text) {
-      const text = String(step.text).replace(/'/g,"\\'");
-      const x = `//*[contains(normalize-space(string(.)),'${text}')]`;
-      success = await tryClickXpath(page, x, Math.min(actionTimeout,4000));
-    }
+    } // end selectors loop
+
     if (!success) {
-      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found' });
+      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found', detail: (lastErr && lastErr.message) ? lastErr.message : null });
       if (step.mandatory) throw new Error(`Mandatory step failed: ${label}`);
     } else {
       sseSend(sessionId, 'log', { step: label, ok: true });
+      // optional wait after success
+      if (step.waitMs && Number(step.waitMs) > 0) {
+        await page.waitForTimeout(Number(step.waitMs));
+      } else {
+        await page.waitForTimeout(perActionDelay + Math.floor(Math.random()*350));
+      }
     }
-    await new Promise(r => setTimeout(r, perActionDelay + Math.floor(Math.random()*350)));
-  }
+  } // end steps loop
 }
 
 // helper to make a compact snippet (non-sensitive)
