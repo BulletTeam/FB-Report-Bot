@@ -258,10 +258,23 @@ function getSession(sid = 'default') {
 }
 function sseSend(sid, event, payload) {
   const sess = getSession(sid);
-  const pretty = `${new Date().toLocaleTimeString()} ${event} ${JSON.stringify(payload)}`;
+
+  // avoid logging full base64 for screenshots
+  let prettyPayload;
+  if (event === 'screenshot') {
+    prettyPayload = { note: 'screenshot event (image data omitted)', length: payload.length || 0 };
+  } else {
+    prettyPayload = payload;
+  }
+
+  const pretty = `${new Date().toLocaleTimeString()} ${event} ${JSON.stringify(prettyPayload)}`;
   sess.logs.push(pretty);
   if (sess.logs.length > 2000) sess.logs.shift();
-  simpleLog('SSE', sid, event, payload);
+
+  // log short info only
+  simpleLog('SSE', sid, event, prettyPayload);
+
+  // but still send full data to UI clients
   for (const res of sess.clients) {
     try {
       if (event && event !== 'message') res.write(`event: ${event}\n`);
