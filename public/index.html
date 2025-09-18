@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Facebook Automation Tool</title>
+  <title>Facebook Automation Tool — Control</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
   <style>
     :root{
@@ -38,84 +38,43 @@
       display:flex; flex-direction:column; align-items:center; text-align:center;
       flex: 1 1 60%; min-width:260px; max-width:calc(60% - 10px);
     }
-    .header-title {
-      white-space: nowrap !important;
-      overflow: visible !important;
-      text-overflow: clip !important;
-      display: inline-block !important;
-      max-width: 100% !important;
-      font-size: clamp(16px, 4.6vw, 36px) !important;
-      line-height: 1 !important;
-      transform: none !important;
-    }
+    .header-title { font-size: clamp(16px, 4.6vw, 36px); line-height:1; }
     .header-meta { font-size:14px; color: #9fb4d3; margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
-    .header-meta strong { color:#fff; font-weight:800; }
     .team-badge { margin-top:10px; color:#4fb0ff; font-weight:900; letter-spacing:0.6px; font-size:15px; }
 
-    .card { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px; }
+    .card { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px; width:100%; }
     .report-card { padding:18px; border-radius:16px; display:block; flex:1 1 36%; min-width:300px; max-width:calc(40% - 10px); }
-
-    @media(max-width:900px){
-      .header-wrap, .report-card { max-width:100%; flex-basis:100%; }
-      .header-title { font-size: clamp(20px, 7vw, 34px); white-space: normal; }
-    }
 
     .section-title { font-size:18px; font-weight:800; margin-bottom:6px; }
     .section-sub { color:var(--muted); margin-bottom:12px; font-size:13px; }
-
-    .radio-row { display:grid; grid-template-columns: repeat(1, 1fr); gap:12px; margin-top:6px; }
-    .radio-pill { display:flex; align-items:center; gap:10px; padding:12px 18px; border-radius:999px; background:var(--soft); border:1px solid transparent; font-weight:700; color:#0b1220; justify-content:center; min-height:48px; }
-    .radio-pill input{ transform:scale(1.05); margin-right:8px; }
 
     .token-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
     .token-row input[type=text] { flex:1; padding:12px 14px; border-radius:12px; border:1px solid #e8eefb; background:#fbfdff; font-weight:600; color:#0b1220; }
     .btn { cursor:pointer; border:0; padding:10px 16px; border-radius:12px; font-weight:700; }
     .btn-ghost { background:transparent; border:1px solid #cfe0ff; color:var(--blue); padding:10px 14px; border-radius:12px; }
-    .btn-upload { background:transparent; border:1px solid #dfefff; color:var(--blue); padding:12px 18px; border-radius:14px; font-weight:800; }
-    .btn-start { background:var(--blue); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 14px 36px rgba(24,105,255,0.14); }
-    .btn-stop { background:var(--accent); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 12px 28px rgba(255,77,79,0.12); }
+    .btn-start { background:var(--blue); color:#fff; padding:14px 20px; border-radius:12px; font-size:15px; }
+    .btn-stop { background:var(--accent); color:#fff; padding:14px 20px; border-radius:12px; font-size:15px; }
 
-    .target input { width:100%; padding:14px; border-radius:12px; border:1px solid #e6eef9; }
-
-    .options-list { margin-top:12px; display:grid; gap:12px; }
-    .option-item { display:flex; gap:12px; align-items:center; padding:14px; border-radius:12px; border:1px solid #eef3fb; background:white; font-weight:700; font-size:15px; }
-    .option-item input{ width:20px; height:20px; transform:scale(1.05); }
-
-    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
-    th, td { padding:8px 10px; border-bottom:1px solid #eef2f6; text-align:left; vertical-align:top; }
-    th { background:#fbfdff; font-weight:800; font-size:13px; }
-    .snippet { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
-    .reason { max-width:280px; word-break:break-all; font-size:12px; color:#333; }
-    .status-live { color: #059669; font-weight:800; }
-    .status-invalid { color:#dc2626; font-weight:800; }
-    .status-parsed { color:#374151; font-weight:700; }
-    .status-error { color: #b45309; font-weight:800; }
+    .control-panel { display:flex; flex-direction:column; gap:10px; }
+    .control-row { display:flex; gap:8px; align-items:center; }
+    .link-button { padding:8px 12px; border-radius:8px; background:#07121a; color:#fff; text-decoration:none; border:1px solid rgba(255,255,255,0.04); display:inline-block; }
 
     .log-area { background:#000; color:#66ff99; padding:14px; border-radius:8px; height:320px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap; }
-    #cookieLog { background:#0b1220; color:#9fe0ff; padding:10px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; font-size:12px; }
-
-    .logs-card { padding:22px; border-radius:16px; background: linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0; box-shadow: 0 14px 40px rgba(2,6,23,0.45); margin-top:12px; }
-    .log-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; font-size:18px; color:#f1d4ff; }
-    pre.log-area{ background:#000; color:#66ff99; padding:22px; border-radius:12px; height:360px; overflow:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; font-size:15px; border: 1px solid rgba(255,255,255,0.04); box-shadow: inset 0 6px 20px rgba(0,0,0,0.6); white-space:pre-wrap; }
-
-    textarea#textCookies { width:100%; min-height:120px; padding:12px; border-radius:10px; border:1px solid #e6eef9; resize:vertical; font-family:inherit; font-size:13px; }
-    input[type=file] { font-size:13px; }
-
     footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); padding:12px 0; }
-
+    @media(max-width:900px){ .header-wrap, .report-card { max-width:100%; flex-basis:100%; } }
   </style>
 </head>
 <body>
   <div class="page">
     <div class="top-row">
-      <div class="header-wrap" role="banner" aria-label="Application header">
+      <div class="header-wrap" role="banner">
         <div class="header-title">⚡ Facebook Auto Report Tool ⚡</div>
-        <div class="header-meta" role="list">
-          <div role="listitem">👤 Author: <strong>PRAVAS BERA</strong></div>
-          <div role="separator">|</div>
-          <div role="listitem">🌍 Version: <strong>Premium</strong></div>
-          <div role="separator">|</div>
-          <div role="listitem">🇮🇳 Country: <strong>INDIA</strong></div>
+        <div class="header-meta">
+          <div>👤 Author: <strong>PRAVAS BERA</strong></div>
+          <div>|</div>
+          <div>🌍 Version: <strong>Premium</strong></div>
+          <div>|</div>
+          <div>🇮🇳 Country: <strong>INDIA</strong></div>
         </div>
         <div class="team-badge">🔥 INDIAN DANGER OF BULLET TEAM 🔥</div>
       </div>
@@ -123,88 +82,79 @@
       <div class="card report-card" role="region" aria-label="Choose report type">
         <div>
           <div class="section-title">Choose Report Type</div>
-          <div class="section-sub">Select the object you want to report — options will change accordingly.</div>
+          <div class="section-sub">Select the object you want to report — options only used for display and to send to server.</div>
         </div>
 
-        <div class="radio-row" role="radiogroup" aria-label="Report type">
-          <label class="radio-pill"><input type="radio" name="rtype" value="profile" checked> Profile</label>
-          <label class="radio-pill"><input type="radio" name="rtype" value="page"> Page</label>
-          <label class="radio-pill"><input type="radio" name="rtype" value="post"> Post</label>
+        <div style="margin-top:8px;">
+          <label style="font-weight:800; display:block; margin-bottom:6px;">Type</label>
+          <div style="display:flex; gap:8px;">
+            <label style="padding:8px 12px; border-radius:8px; background:var(--soft); font-weight:700;"><input type="radio" name="rtype" value="profile" checked> Profile</label>
+            <label style="padding:8px 12px; border-radius:8px; background:var(--soft); font-weight:700;"><input type="radio" name="rtype" value="page"> Page</label>
+            <label style="padding:8px 12px; border-radius:8px; background:var(--soft); font-weight:700;"><input type="radio" name="rtype" value="post"> Post</label>
+          </div>
         </div>
 
-        <div class="target" style="margin-top:14px;">
-          <label style="font-weight:800; display:block; margin-bottom:8px;">Target URL / ID</label>
-          <input id="target" type="text" placeholder="https://facebook.com/..." aria-label="Target URL or ID" />
+        <div style="margin-top:12px;">
+          <label style="font-weight:800; display:block; margin-bottom:6px;">Target URL / ID</label>
+          <input id="target" type="text" placeholder="https://facebook.com/..." style="width:100%; padding:12px; border-radius:10px; border:1px solid #e6eef9;" />
         </div>
-
-        <div id="optionsBox" class="options-list" aria-live="polite"></div>
       </div>
     </div>
 
-    <div class="card" aria-labelledby="token-label">
-      <label id="token-label" style="font-weight:800; display:block; margin-bottom:8px;">Enter Admin Token here (x-admin-token)</label>
-      <div class="token-row">
-        <input id="adminToken" type="text" placeholder="x-admin-token" aria-label="Admin token" />
-        <button id="saveToken" class="btn-ghost btn">Save</button>
-      </div>
-    </div>
-
-    <!-- Cookie manager -->
-    <div class="card" role="region" aria-label="Cookie Manager">
+    <!-- Control Panel (main visible area) -->
+    <div class="card" role="region" aria-label="Control Panel">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="font-weight:800; font-size:16px">Cookie Manager</div>
-        <div class="small">Upload cookies.txt (one cookie string per line). Valid accounts auto-indexed.</div>
+        <div style="font-weight:800; font-size:16px">Control Panel</div>
+        <div class="small">Start / Stop runner · SSE preview · shortcuts</div>
       </div>
 
-      <form id="uploadForm" style="margin-top:10px">
-        <textarea id="textCookies" placeholder="Paste cookies here (one per line)"></textarea>
-        <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-          <input id="fileInput" type="file" accept=".txt" />
-          <label style="display:flex; gap:8px; align-items:center;">
-            <input id="autoStart" type="checkbox" /> <span class="small">Auto-start job with target after upload</span>
-          </label>
-          <button type="submit" class="btn btn-upload">Upload</button>
+      <div class="control-panel">
+        <div style="font-weight:800; margin-top:6px;">Admin token (x-admin-token)</div>
+        <div class="token-row">
+          <input id="adminToken" type="text" placeholder="x-admin-token" />
+          <button id="saveToken" class="btn-ghost btn">Save</button>
         </div>
-      </form>
 
-      <div id="uploadResult" class="small" style="margin-top:8px;color:#333"></div>
+        <div style="font-weight:800;">Session ID</div>
+        <input id="sessionId" type="text" value="default" style="padding:10px; border-radius:8px; border:1px solid #e6eef9;" />
 
-      <div style="margin-top:12px; font-weight:800">Indexed Cookies</div>
-      <div class="small">Summary: <span id="summary">-</span></div>
+        <div class="control-row">
+          <button id="startBtn" class="btn-start">Start</button>
+          <button id="stopBtn" class="btn-stop">Stop</button>
+          <button id="connectSSE" class="btn-ghost">Connect SSE</button>
+          <button id="disconnectSSE" class="btn-ghost">Disconnect SSE</button>
+        </div>
 
-      <table id="cookieTable" aria-live="polite">
-        <thead><tr><th style="width:48px">#</th><th>Snippet</th><th style="width:110px">Status</th><th>Reason/URL</th><th style="width:160px">ParsedAt</th></tr></thead>
-        <tbody></tbody>
-      </table>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <a id="seeLive" class="link-button" href="/live.html" target="_blank">See Live</a>
+          <a id="cookieManager" class="link-button" href="/cookies.html" target="_blank">Cookie Manager</a>
+        </div>
 
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <button id="refreshList" class="btn btn-ghost">Refresh List</button>
-        <button id="clearIndex" class="btn btn-ghost">Clear Index</button>
+        <div style="margin-top:6px; font-weight:800;">
+          Current page: <span id="currentPage">-</span>
+        </div>
       </div>
-
-      <div style="margin-top:12px; font-weight:800">Cookie Log</div>
-      <pre id="cookieLog"></pre>
     </div>
 
-    <!-- Controls -->
+    <!-- Short runner controls (kept for convenience) -->
     <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
       <div>
         <div style="font-weight:800">Runner Controls</div>
         <div class="small">Start/stop the server-side runner for the saved cookies.</div>
       </div>
       <div style="display:flex; gap:8px;">
-        <button id="startBtn" class="btn btn-start">Start</button>
-        <button id="stopBtn" class="btn btn-stop">Stop</button>
+        <button id="startBtnShort" class="btn-start">Start</button>
+        <button id="stopBtnShort" class="btn-stop">Stop</button>
       </div>
     </div>
 
     <!-- Live logs -->
-    <div class="logs-card card" role="region">
+    <div class="card" style="background:linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <div style="font-weight:800">Live Log</div>
-        <div><input id="autoScroll" type="checkbox" checked/> <label for="autoScroll" class="small">Auto-scroll</label></div>
+        <div><input id="autoScroll" type="checkbox" checked/> <label for="autoScroll">Auto-scroll</label></div>
       </div>
-      <pre id="logArea" class="log-area">✅ Connected</pre>
+      <pre id="logArea" class="log-area">✅ Control panel ready</pre>
     </div>
 
     <footer>© 2025 Facebook Automation Tool — BULLET TEAM</footer>
@@ -212,132 +162,68 @@
 
 <script>
 (() => {
-  // Elements
   const adminInput = document.getElementById('adminToken');
   const saveTokenBtn = document.getElementById('saveToken');
-  const uploadForm = document.getElementById('uploadForm');
-  const fileInput = document.getElementById('fileInput');
-  const textCookies = document.getElementById('textCookies');
-  const uploadResult = document.getElementById('uploadResult');
-  const cookieLogEl = document.getElementById('cookieLog');
-  const cookieTableBody = document.querySelector('#cookieTable tbody');
-  const summaryEl = document.getElementById('summary');
-  const refreshListBtn = document.getElementById('refreshList');
-  const clearIndexBtn = document.getElementById('clearIndex');
-  const logArea = document.getElementById('logArea');
-  const autoScroll = document.getElementById('autoScroll');
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const startBtnShort = document.getElementById('startBtnShort');
+  const stopBtnShort = document.getElementById('stopBtnShort');
+  const connectBtn = document.getElementById('connectSSE');
+  const disconnectBtn = document.getElementById('disconnectSSE');
+  const sessionInput = document.getElementById('sessionId');
+  const logArea = document.getElementById('logArea');
+  const autoScroll = document.getElementById('autoScroll');
   const targetInput = document.getElementById('target');
-  const autoStartCheckbox = document.getElementById('autoStart');
+  const currentPageEl = document.getElementById('currentPage');
 
   let eventSource = null;
   let lastSession = null;
 
-  /* --- OPTION SETS + renderer --- */
-  const OPTION_SETS = {
-    profile: [
-      'Problem involving someone under 18',
-      'Bullying, harassment or abuse',
-      'Violent, hateful or disturbing content',
-      'Adult content',
-      'Fake profile'
-    ],
-    page: [
-      'Problem involving someone under 18',
-      'Bullying, harassment or abuse',
-      'Violent, hateful or disturbing content',
-      'Adult content',
-      'Fake page'
-    ],
-    post: [
-      'Problem involving someone under 18',
-      'Bullying, harassment or abuse',
-      'Violent, hateful or disturbing content',
-      'Adult content'
-    ]
-  };
-
-  function renderOptions(type){
-    const optionsBox = document.getElementById('optionsBox');
-    if(!optionsBox) return;
-    optionsBox.innerHTML = '';
-    (OPTION_SETS[type] || []).forEach((opt, i) => {
-      const id = `${type}-opt-${i}`;
-      const div = document.createElement('div');
-      div.className = 'option-item';
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.id = id;
-      checkbox.dataset.text = opt;
-      const label = document.createElement('label');
-      label.htmlFor = id;
-      label.textContent = opt;
-      div.appendChild(checkbox);
-      div.appendChild(label);
-      optionsBox.appendChild(div);
-    });
-  }
-
-  // initial render of options based on selected radio
-  document.querySelectorAll('input[name=rtype]').forEach(r => r.addEventListener('change', (e) => renderOptions(e.target.value)));
-  renderOptions(document.querySelector('input[name=rtype]:checked').value);
-
-  // helpers
-  function nowTime(){ return new Date().toLocaleTimeString(); }
-  function appendLog(s){
-    logArea.textContent += `[${nowTime()}] ${s}\n`;
+  function now(){ return new Date().toLocaleTimeString(); }
+  function appendLog(msg){
+    logArea.textContent += `[${now()}] ${msg}\n`;
     if (autoScroll.checked) logArea.scrollTop = logArea.scrollHeight;
   }
-  function appendCookieLog(s){
-    cookieLogEl.textContent += `[${nowTime()}] ${s}\n`;
-    cookieLogEl.scrollTop = cookieLogEl.scrollHeight;
-  }
 
-  // admin token save/load
+  // persist admin token locally
   adminInput.value = localStorage.getItem('adminToken') || '';
   saveTokenBtn.addEventListener('click', () => {
     const v = adminInput.value.trim();
     if (!v) return alert('Enter admin token first');
     localStorage.setItem('adminToken', v);
-    alert('Admin token saved locally');
+    appendLog('Admin token saved locally');
   });
 
-  // SSE connect helper
+  // SSE helpers
   function connectSSE(sid){
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { appendLog('Admin token missing for SSE'); return; }
-    if (!sid) sid = 'default';
+    if (!sid) sid = sessionInput.value || 'default';
     disconnectSSE();
     lastSession = sid;
     const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
     appendLog('Connecting SSE: ' + url);
-    try {
-      eventSource = new EventSource(url);
-    } catch (e) {
-      appendLog('EventSource creation failed: ' + (e && e.message));
-      return;
-    }
+    eventSource = new EventSource(url);
     eventSource.onopen = () => appendLog('SSE connected');
-    eventSource.onmessage = (e) => {
-      appendLog('[msg] ' + e.data);
-    };
-    const named = ['log','info','warn','error','done','success','fatal','cookieStatus'];
+    eventSource.onmessage = (e) => appendLog('[msg] ' + e.data);
+
+    const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
     named.forEach(ev=>{
       eventSource.addEventListener(ev, (evt) => {
         try {
-          const d = JSON.parse(evt.data);
-          appendLog(`[${ev}] ${JSON.stringify(d)}`);
-          if (ev === 'cookieStatus') {
-            appendCookieLog(JSON.stringify(d));
-            // fetch list after a small debounce to let server update index
-            setTimeout(() => fetchCookieList().catch(()=>{}), 350);
+          // try parse JSON; sometimes server sends strings
+          const payload = JSON.parse(evt.data);
+          // if server sends screenshot base64, it might be long; only update currentPage when url present
+          if (payload && payload.url) {
+            currentPageEl.textContent = payload.url;
           }
-        } catch(err){
+          appendLog(`[${ev}] ${JSON.stringify(payload)}`);
+        } catch (err) {
           appendLog(`[${ev}] ${evt.data}`);
         }
       });
     });
+
     eventSource.onerror = (e) => {
       appendLog('SSE error/closed');
     };
@@ -350,127 +236,24 @@
     }
   }
 
-  // Upload handler (multipart/form-data or text)
-  uploadForm.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return alert('Set admin token first');
+  connectBtn.addEventListener('click', () => connectSSE(sessionInput.value || 'default'));
+  disconnectBtn.addEventListener('click', () => disconnectSSE());
 
-    const file = fileInput.files[0];
-    const text = textCookies.value.trim();
-    if (!file && !text) return alert('Provide file or paste cookies text');
-
-    const form = new FormData();
-    if (file) form.append('cookies', file);
-    else form.append('text', text);
-
-    const sid = 'sess-' + Date.now();
-    appendLog('Uploading cookies...');
-    try {
-      const res = await fetch(`/uploadCookies?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`, {
-        method:'POST',
-        body: form
-      });
-      const j = await res.json().catch(()=>({ok:false, error:'invalid-json'}));
-      uploadResult.textContent = 'Upload response: ' + JSON.stringify(j);
-      appendLog('Upload finished: ' + JSON.stringify(j));
-      // connect SSE to session to watch live validation logs
-      connectSSE(sid);
-
-      // after upload, if autoStart AND target present -> start job
-      if (autoStartCheckbox.checked) {
-        const target = targetInput.value.trim();
-        if (!target) appendLog('Auto-start requested but target empty');
-        else {
-          appendLog('Auto-starting job with the uploaded cookies...');
-          setTimeout(() => startJob({ sessionId: sid, targetUrl: target }), 1200);
-        }
-      }
-
-      // refresh UI list after a short delay
-      setTimeout(() => fetchCookieList().catch(()=>{}), 700);
-    } catch (e) {
-      appendLog('Upload error: ' + (e && e.message));
-      uploadResult.textContent = 'Upload error: ' + (e && e.message);
-    }
-  });
-
-  // fetch cookie list
-  async function fetchCookieList(){
-    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) { appendLog('Cannot fetch cookie list: admin token missing'); return; }
-    try {
-      const r = await fetch(`/cookieList?adminToken=${encodeURIComponent(token)}`);
-      if (!r.ok) { appendLog('cookieList fetch returned non-200'); return; }
-      const j = await r.json();
-      if (!j || !Array.isArray(j.cookies)) { appendLog('cookieList: bad response'); return; }
-      renderCookieList(j);
-    } catch(e){ appendLog('fetchCookieList error: '+ (e && e.message)); }
-  }
-
-  function renderCookieList(payload) {
-    const { counts = {}, cookies = [] } = payload || {};
-    try {
-      summaryEl.textContent = JSON.stringify(counts);
-      cookieTableBody.innerHTML = '';
-      cookies.forEach(c => {
-        const tr = document.createElement('tr');
-
-        const tdIndex = document.createElement('td');
-        tdIndex.textContent = c.lineIndex ?? '-';
-
-        const tdSnippet = document.createElement('td');
-        const span = document.createElement('span');
-        span.className = 'snippet';
-        span.textContent = c.snippet || c.originalLine || '';
-        // use title attribute but escape automatically by property assignment
-        span.title = c.originalLine || c.snippet || '';
-        tdSnippet.appendChild(span);
-
-        const tdStatus = document.createElement('td');
-        const status = (c.validateResult && c.validateResult.status) ? c.validateResult.status : (c.isAccount ? 'parsed' : 'invalid');
-        tdStatus.textContent = status;
-        tdStatus.className = status === 'live' ? 'status-live' : status === 'invalid' ? 'status-invalid' : status === 'parsed' ? 'status-parsed' : 'status-error';
-
-        const tdReason = document.createElement('td');
-        const reasonText = (c.validateResult && (c.validateResult.reason || c.validateResult.url)) ? (c.validateResult.reason || c.validateResult.url) : '';
-        tdReason.className = 'reason';
-        tdReason.textContent = reasonText;
-
-        const tdParsedAt = document.createElement('td');
-        tdParsedAt.textContent = c.parsedAt || '';
-
-        tr.appendChild(tdIndex);
-        tr.appendChild(tdSnippet);
-        tr.appendChild(tdStatus);
-        tr.appendChild(tdReason);
-        tr.appendChild(tdParsedAt);
-
-        cookieTableBody.appendChild(tr);
-      });
-      appendLog('cookie list rendered: ' + cookies.length);
-    } catch (err) {
-      appendLog('renderCookieList error: ' + (err && err.message));
-    }
-  }
-
-  // start job
+  // start/stop job
   async function startJob(opts = {}) {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) return alert('Set admin token first');
     const sid = opts.sessionId || ('sess-run-' + Date.now());
     const target = opts.targetUrl || targetInput.value.trim();
     const setType = document.querySelector('input[name=rtype]:checked')?.value || 'profile';
-    if (!target) return alert('Set target URL first');
-
-    appendLog('Starting job session ' + sid + ' target=' + target);
+    appendLog('Starting job session ' + sid + ' target=' + (target || '[none]') + ' type=' + setType);
     try {
       const res = await fetch('/start', {
         method:'POST',
         headers: { 'Content-Type':'application/json', 'x-admin-token': token },
         body: JSON.stringify({ sessionId: sid, targetUrl: target, setType })
       });
-      const j = await res.json();
+      const j = await res.json().catch(()=>({ok:false}));
       if (!j.ok) {
         appendLog('Start failed: ' + JSON.stringify(j));
         alert('Start failed: ' + (j.message || JSON.stringify(j)));
@@ -483,12 +266,10 @@
       appendLog('Start error: ' + (e && e.message));
     }
   }
-
-  // stop job
   async function stopJob() {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) return alert('Set admin token first');
-    const sid = lastSession || 'default';
+    const sid = lastSession || sessionInput.value || 'default';
     appendLog('Requesting stop for session ' + sid);
     try {
       const res = await fetch('/stop', {
@@ -504,56 +285,19 @@
     }
   }
 
-  // UI bindings: start/stop buttons
   startBtn.addEventListener('click', () => startJob({}));
   stopBtn.addEventListener('click', () => stopJob());
+  startBtnShort && startBtnShort.addEventListener('click', () => startJob({}));
+  stopBtnShort && stopBtnShort.addEventListener('click', () => stopJob());
 
-  // refresh list and clear index
-  refreshListBtn.addEventListener('click', () => fetchCookieList());
-  clearIndexBtn.addEventListener('click', async () => {
-    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return alert('Set admin token first');
-    if (!confirm('Clear cookie index (removes all entries)?')) return;
-    try {
-      const r = await fetch('/cookieIndex/clear', { method:'POST', headers: { 'Content-Type':'application/json', 'x-admin-token': token } });
-      const j = await r.json().catch(()=>({}));
-      appendLog('Clear index: ' + JSON.stringify(j));
-      fetchCookieList();
-    } catch(e){ appendLog('clearIndex error: '+ (e && e.message)); }
-  });
-
-  // auto fetch cookie list on load if token exists
+  // auto-load token
   window.addEventListener('load', () => {
-    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (token) {
-      fetchCookieList().catch(()=>{});
-    }
+    const t = localStorage.getItem('adminToken');
+    if (t) { adminInput.value = t; appendLog('Admin token loaded from storage'); }
   });
 
-  // when file picked, preload to textarea for convenience
-  fileInput.addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    try {
-      const txt = await f.text();
-      textCookies.value = txt;
-      appendLog('File loaded into paste area (' + f.name + ')');
-    } catch (err) {
-      appendLog('File read error: ' + (err && err.message));
-    }
-  });
-
-  // small helper to periodically refresh cookieList when SSE not available
-  setInterval(() => {
-    if (!eventSource) {
-      // only refresh when not receiving SSE events (optional)
-      // fetchCookieList().catch(()=>{});
-    }
-  }, 30_000);
-
-  // expose some functions for debugging
-  window.__tool = { connectSSE, disconnectSSE, fetchCookieList, startJob, stopJob };
-
+  // expose for console
+  window.__control = { connectSSE, disconnectSSE, startJob, stopJob, appendLog };
 })();
 </script>
 </body>
