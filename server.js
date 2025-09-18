@@ -602,9 +602,10 @@ async function reportRunner(sessionId, opts = {}) {
     if (!found) { sseSend(sessionId,'error',{msg:'Requested set not found'}); sess.running=false; return; }
 
     async function launchBrowser() {
-      return await launchBrowserWithFallback({ headless: !!opts.headless, args: opts.args || [], defaultViewport: opts.defaultViewport });
+      // default to headless=true unless caller explicitly passed headless:false
+      const headless = (typeof opts.headless === 'boolean') ? opts.headless : true;
+      return await launchBrowserWithFallback({ headless: headless, args: opts.args || [], defaultViewport: opts.defaultViewport });
     }
-
     let browser = await launchBrowser();
     sess.browser = browser;
     let sinceRestart = 0;
