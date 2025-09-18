@@ -1,112 +1,183 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Live Preview</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Live Preview — FB Automation</title>
   <style>
-    body { font-family: Arial, sans-serif; background:#0f1720; color:#e6eef8; margin:0; padding:12px; }
-    #controls { width:240px; float:left; padding-right:10px; }
-    #preview { margin-left:260px; max-width:600px; text-align:center; }
-    #screenshot { width:360px; height:auto; border:1px solid #333; background:#000; }
-    #log { margin-top:12px; font-family: monospace; font-size:12px; color:#b7f3a6; background:#041018; padding:8px; max-height:300px; overflow:auto; }
-    label,input{display:block;margin-bottom:6px}
-    button{padding:6px 10px;margin:4px}
+    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#0f1724;color:#e6eef8}
+    .wrap{max-width:1200px;margin:18px auto;padding:18px}
+    .hdr{display:flex;gap:12px;align-items:center;justify-content:space-between}
+    .hdr h1{font-size:18px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    input[type=text]{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+    button{padding:8px 12px;border-radius:8px;border:0;background:#1869ff;color:#fff;cursor:pointer}
+    .main{display:grid;grid-template-columns: 1fr 360px;gap:14px;margin-top:14px}
+    .preview{background:#071025;border-radius:10px;padding:10px;height:640px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px}
+    .screen{background:#000;border-radius:8px;overflow:hidden;max-width:100%;height:520px;display:flex;align-items:center;justify-content:center}
+    .screen img{max-width:100%;max-height:100%;display:block}
+    .meta{width:100%;display:flex;justify-content:space-between;gap:8px;color:#9fb4d3}
+    .logs{background:#061022;padding:10px;border-radius:8px;height:80px;overflow:auto;font-family:monospace;font-size:13px;color:#9fe0ff}
+    .side{display:flex;flex-direction:column;gap:10px}
+    .card{background:#071827;padding:12px;border-radius:10px}
+    label.small{font-size:12px;color:#9fb4d3}
+    .badge{background:#06263a;padding:6px 8px;border-radius:8px;color:#8be0ff;font-weight:700}
   </style>
 </head>
 <body>
-  <div id="controls">
-    <label>Admin token:</label>
-    <input id="token" value="" placeholder="ADMIN_TOKEN" />
-    <label>Session ID:</label>
-    <input id="session" value="default" />
-    <button id="connect">Connect SSE</button>
-    <button id="disconnect">Disconnect</button>
-    <div style="margin-top:8px;">Current page: <span id="curpage">-</span></div>
-    <div style="margin-top:8px;"><button id="startBtn">Start</button><button id="stopBtn">Stop</button></div>
-  </div>
+  <div class="wrap">
+    <div class="hdr">
+      <h1>Live Preview — Browser Activity</h1>
+      <div class="controls">
+        <input id="adminToken" type="text" placeholder="x-admin-token" aria-label="admin token" />
+        <input id="sessionId" type="text" placeholder="sessionId (default)" style="width:160px" />
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+      </div>
+    </div>
 
-  <div id="preview">
-    <h3>Live Browser Preview</h3>
-    <div id="imgwrap"><img id="screenshot" src="" alt="(no screenshot yet)" /></div>
-    <div id="log"></div>
+    <div class="main">
+      <div class="preview">
+        <div class="meta">
+          <div><strong>Current URL:</strong> <span id="curUrl">-</span></div>
+          <div><span class="badge" id="statusBadge">disconnected</span></div>
+        </div>
+
+        <div class="screen" id="screenArea">
+          <div id="screenPlaceholder" style="color:#9fb4d3">No screenshot yet</div>
+          <!-- <img id="screenImg" src="" alt="screenshot" /> -->
+        </div>
+
+        <div class="logs" id="activityLog">— activity log —</div>
+      </div>
+
+      <div class="side">
+        <div class="card">
+          <div style="font-weight:800">Connection</div>
+          <div style="margin-top:8px"><label class="small">Auto-reconnect:</label> <input id="autoReconnect" type="checkbox" checked /></div>
+          <div style="margin-top:8px"><label class="small">Screenshot decode:</label> <select id="decodeMode"><option value="raw">raw base64</option><option value="json">wrapped JSON</option></select></div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800">Activity</div>
+          <div style="margin-top:8px"><strong>Last event:</strong> <span id="lastEvent">none</span></div>
+          <div style="margin-top:6px"><strong>Last screenshot:</strong> <span id="lastSsTime">-</span></div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800">Quick actions</div>
+          <div style="display:flex;gap:8px;margin-top:8px"><button id="clearLog">Clear log</button><button id="openLiveTab">Open in new tab</button></div>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
-let es = null;
-const tokenEl = document.getElementById('token');
-const sessEl = document.getElementById('session');
-const connectBtn = document.getElementById('connect');
-const disconnectBtn = document.getElementById('disconnect');
-const img = document.getElementById('screenshot');
-const logEl = document.getElementById('log');
-const curpage = document.getElementById('curpage');
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
+(() => {
+  const adminEl = document.getElementById('adminToken');
+  const sidEl = document.getElementById('sessionId');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const curUrl = document.getElementById('curUrl');
+  const statusBadge = document.getElementById('statusBadge');
+  const activityLog = document.getElementById('activityLog');
+  const screenArea = document.getElementById('screenArea');
+  const screenPlaceholder = document.getElementById('screenPlaceholder');
+  const lastEvent = document.getElementById('lastEvent');
+  const lastSsTime = document.getElementById('lastSsTime');
+  const autoReconnect = document.getElementById('autoReconnect');
+  const clearLogBtn = document.getElementById('clearLog');
+  const openLiveTab = document.getElementById('openLiveTab');
+  const decodeMode = document.getElementById('decodeMode');
 
-function appendLog(t){
-  const d = document.createElement('div');
-  d.textContent = '['+new Date().toLocaleTimeString()+'] '+t;
-  logEl.appendChild(d);
-  logEl.scrollTop = logEl.scrollHeight;
-}
+  let es = null;
+  let reconnectTimer = null;
 
-connectBtn.onclick = () => {
-  if (es) { appendLog('Already connected'); return; }
-  const token = encodeURIComponent(tokenEl.value || '');
-  const session = encodeURIComponent(sessEl.value || 'default');
-  if (!token) { alert('Set admin token'); return; }
-  const url = '/events?sessionId='+session+'&adminToken='+token;
-  es = new EventSource(url);
-  es.addEventListener('ready', e => { appendLog('SSE ready'); });
-  es.addEventListener('log', e => { try { const p = JSON.parse(e.data); appendLog('log: '+JSON.stringify(p)); if (p.msg==='page-url' && p.url) { curpage.textContent = p.url; } } catch(_){} });
-  es.addEventListener('screenshot', e => {
-    try {
-      const payload = JSON.parse(e.data);
-      // server sends { _noLogFull: true, _heavy: '<base64>', length: N }
-      if (payload && payload._heavy) {
-        img.src = 'data:image/png;base64,' + payload._heavy;
-        appendLog('screenshot received, len='+ (payload.length||0));
-      } else {
-        // maybe server sends base64 string directly
-        if (typeof payload === 'string' && payload.startsWith('iVBOR')) {
-          img.src = 'data:image/png;base64,' + payload;
-          appendLog('screenshot received (string)');
+  function appendLog(s){
+    activityLog.textContent = `[${new Date().toLocaleTimeString()}] ${s}
+` + activityLog.textContent;
+  }
+
+  function showScreenshotFromBase64(b64){
+    lastSsTime.textContent = new Date().toLocaleTimeString();
+    // create/replace img
+    let img = document.getElementById('screenImg');
+    if (!img) {
+      img = document.createElement('img');
+      img.id = 'screenImg';
+      screenArea.innerHTML = '';
+      screenArea.appendChild(img);
+    }
+    img.src = 'data:image/png;base64,' + b64;
+  }
+
+  function connect(){
+    const token = adminEl.value.trim();
+    const sid = sidEl.value.trim() || 'default';
+    if (!token) return alert('Enter admin token');
+    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
+    appendLog('Connecting SSE -> ' + url);
+    es = new EventSource(url);
+    statusBadge.textContent = 'connecting';
+    es.onopen = () => { statusBadge.textContent = 'connected'; statusBadge.style.background = '#065f46'; appendLog('SSE open'); disconnectBtn.disabled = false; connectBtn.disabled = true; };
+    es.onmessage = (e) => { appendLog('[message] ' + e.data); };
+    es.addEventListener('log', (ev) => { try{ const d = JSON.parse(ev.data); appendLog('[log] ' + (d.msg||JSON.stringify(d))); if (d.url) curUrl.textContent = d.url; lastEvent.textContent = 'log'; }catch(e){ appendLog('[log] ' + ev.data); } });
+    es.addEventListener('info', (ev) => { try{ const d=JSON.parse(ev.data); appendLog('[info] ' + JSON.stringify(d)); if (d.url) curUrl.textContent = d.url; lastEvent.textContent='info'; }catch(e){ appendLog('[info] '+ev.data);} });
+    es.addEventListener('error', (ev) => { appendLog('[error] ' + (ev.data||'')); lastEvent.textContent='error'; statusBadge.textContent='error'; });
+
+    es.addEventListener('screenshot', (ev) => {
+      lastEvent.textContent = 'screenshot';
+      try {
+        // server might send raw base64 string or JSON-wrapped
+        let payload = null;
+        try { payload = JSON.parse(ev.data); } catch(_) { payload = ev.data; }
+        if (typeof payload === 'string') {
+          showScreenshotFromBase64(payload);
+        } else if (payload && payload.data) {
+          showScreenshotFromBase64(payload.data);
+        } else if (payload && payload.img) {
+          showScreenshotFromBase64(payload.img);
         } else {
-          appendLog('screenshot meta: '+JSON.stringify(payload));
+          appendLog('Unknown screenshot payload: ' + JSON.stringify(payload));
         }
+      } catch (err) { appendLog('screenshot decode err: ' + err.message); }
+    });
+
+    es.onerror = (e) => {
+      appendLog('SSE error or closed');
+      statusBadge.textContent='disconnected';
+      disconnectBtn.disabled = true;
+      connectBtn.disabled = false;
+      try { es.close(); } catch(_){}
+      es = null;
+      if (autoReconnect.checked) {
+        appendLog('Auto reconnect in 1500ms');
+        reconnectTimer = setTimeout(connect, 1500);
       }
-    } catch (err) { appendLog('screenshot parse err'); }
-  });
-  es.addEventListener('screenshot-meta', e => { try { const p = JSON.parse(e.data); appendLog('screenshot-meta: '+JSON.stringify(p)); } catch(_){} });
-  es.addEventListener('cookieStatus', e => { appendLog('cookie: '+e.data); });
-  es.addEventListener('info', e => { appendLog('info: '+e.data); });
-  es.addEventListener('warn', e => { appendLog('warn: '+e.data); });
-  es.addEventListener('error', e => { appendLog('error: '+e.data); });
-  appendLog('Connecting SSE -> '+url);
-};
+    };
+  }
 
-disconnectBtn.onclick = () => {
-  if (es) { es.close(); es = null; appendLog('SSE disconnected'); }
-};
+  function disconnect(){
+    if (es) try { es.close(); } catch(_){}
+    es = null;
+    statusBadge.textContent = 'disconnected';
+    appendLog('Disconnected');
+    disconnectBtn.disabled = true; connectBtn.disabled = false;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  }
 
-startBtn.onclick = () => {
-  const token = tokenEl.value || '';
-  const session = sessEl.value || 'default';
-  if (!token) return alert('set token');
-  fetch('/start', {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', 'x-admin-token': token },
-    body: JSON.stringify({ sessionId: session, targetUrl: curpage.textContent || 'https://www.facebook.com/' })
-  }).then(r=>r.json()).then(j=>appendLog('start -> '+JSON.stringify(j))).catch(e=>appendLog('start err'));
-};
+  connectBtn.addEventListener('click', connect);
+  disconnectBtn.addEventListener('click', disconnect);
+  clearLogBtn.addEventListener('click', () => { activityLog.textContent = ''; });
+  openLiveTab.addEventListener('click', () => { window.open(location.href, '_blank'); });
 
-stopBtn.onclick = () => {
-  const token = tokenEl.value || '';
-  const session = sessEl.value || 'default';
-  if (!token) return alert('set token');
-  fetch('/stop', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-admin-token': token }, body: JSON.stringify({ sessionId: session }) })
-    .then(r=>r.json()).then(j=>appendLog('stop -> '+JSON.stringify(j))).catch(e=>appendLog('stop err'));
-};
+  // remember token/session
+  adminEl.value = localStorage.getItem('adminToken') || '';
+  sidEl.value = localStorage.getItem('liveSession') || 'default';
+  adminEl.addEventListener('change', () => localStorage.setItem('adminToken', adminEl.value.trim()));
+  sidEl.addEventListener('change', () => localStorage.setItem('liveSession', sidEl.value.trim()));
+
+})();
 </script>
 </body>
 </html>
