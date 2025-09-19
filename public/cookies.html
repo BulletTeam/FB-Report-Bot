@@ -3,146 +3,281 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cookie Manager — Facebook Tool</title>
+  <title>Cookie Manager — FB Automation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
   <style>
-    body{ font-family:Inter, system-ui; padding:18px; background:#f4f7fb; color:#0f1724; }
-    .wrap{ max-width:980px; margin:0 auto; }
-    h1{ margin:0 0 12px 0; }
-    textarea{ width:100%; min-height:160px; padding:10px; border-radius:8px; border:1px solid #ddd; }
-    .row{ display:flex; gap:8px; margin-top:8px; }
-    button{ padding:8px 12px; border-radius:8px; border:0; cursor:pointer; }
-    table{ width:100%; border-collapse:collapse; margin-top:12px; }
-    th,td{ border-bottom:1px solid #eee; padding:8px; text-align:left; }
-    .log{ background:#0b1220; color:#9fe0ff; padding:8px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; white-space:pre-wrap; margin-top:8px; }
+    :root{--blue:#1869ff;--muted:#9aa3b2;--card:#fff;--page-bg:#f4f7fb;--radius:12px}
+    *{box-sizing:border-box} body{font-family:Inter,system-ui; margin:18px; background:var(--page-bg); color:#0b1220}
+    .wrap{max-width:980px;margin:0 auto}
+    .card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:0 6px 18px rgba(20,30,60,0.06)}
+    label{font-weight:700;display:block;margin-bottom:8px}
+    textarea,input[type=text],input[type=file]{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef9}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .btn{cursor:pointer;padding:10px 14px;border-radius:10px;border:0;font-weight:800}
+    .btn-primary{background:var(--blue);color:#fff}
+    .btn-ghost{background:#f8fbff;border:1px solid #dfefff;color:var(--blue)}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+    pre.log{background:#0b1220;color:#9fe0ff;padding:12px;border-radius:8px;height:200px;overflow:auto;font-family:monospace}
+    .small{font-size:13px;color:var(--muted)}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Cookie Manager</h1>
-    <div style="margin-bottom:8px; color:#666;">Upload cookies.txt (one cookie per line) or paste below. After upload use "See Live" from index to observe runner.</div>
+    <h2>Cookie Manager</h2>
 
-    <div>
-      <input id="adminToken" placeholder="x-admin-token" style="padding:8px; border-radius:6px; border:1px solid #ddd; width:100%; margin-bottom:8px;" />
-      <textarea id="textCookies" placeholder="paste cookies here (one per line)"></textarea>
+    <div class="card">
+      <label>Admin token (x-admin-token)</label>
       <div class="row">
-        <input id="fileInput" type="file" accept=".txt" />
-        <label><input id="autoStart" type="checkbox" /> Auto-start</label>
-        <button id="uploadBtn">Upload</button>
-        <button id="refreshBtn">Refresh List</button>
-        <button id="clearBtn">Clear Index</button>
+        <input id="adminToken" type="text" placeholder="Admin token" />
+        <button id="saveToken" class="btn btn-ghost">Save</button>
+        <button id="connectSSEBtn" class="btn btn-ghost">Connect SSE</button>
+        <button id="disconnectSSEBtn" class="btn btn-ghost">Disconnect SSE</button>
       </div>
-      <div id="uploadResult" style="margin-top:8px;color:#333"></div>
+      <div class="small" style="margin-top:8px">Token stored locally for convenience. Server requires this token for uploads & admin APIs.</div>
     </div>
 
-    <div style="margin-top:18px;">
-      <h3>Indexed Cookies</h3>
-      <div id="summary" style="color:#666">-</div>
-      <table id="cookieTable"><thead><tr><th>#</th><th>Snippet</th><th>Status</th><th>Reason/URL</th><th>ParsedAt</th></tr></thead><tbody></tbody></table>
+    <div class="card">
+      <label>Upload cookies.txt (one cookie line per line) or paste text below</label>
+      <form id="uploadForm">
+        <input id="fileInput" type="file" accept=".txt" />
+        <div style="height:8px"></div>
+        <textarea id="textCookies" placeholder="Paste cookies text (one per line)"></textarea>
+        <div style="height:8px"></div>
+        <div class="row">
+          <label style="display:flex;align-items:center"><input id="autoStart" type="checkbox" style="margin-right:8px"/> Auto-start job with target after upload</label>
+          <input id="target" type="text" placeholder="Target URL (optional - used when Auto-start checked)" style="flex:1" />
+          <button type="submit" class="btn btn-primary">Upload</button>
+        </div>
+      </form>
+
+      <div id="uploadResult" class="small" style="margin-top:10px"></div>
     </div>
 
-    <div style="margin-top:12px;">
-      <h3>Cookie Log</h3>
-      <pre id="cookieLog" class="log"></pre>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <label>Indexed Cookies</label>
+          <div id="summary" class="small">Summary: -</div>
+        </div>
+        <div class="row">
+          <button id="refreshBtn" class="btn btn-ghost">Refresh List</button>
+          <button id="clearBtn" class="btn btn-ghost">Clear Index</button>
+        </div>
+      </div>
+
+      <table id="cookieTable" aria-live="polite">
+        <thead><tr><th style="width:48px">#</th><th>Snippet</th><th style="width:110px">Status</th><th>Reason/URL</th><th style="width:160px">ParsedAt</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <label>Cookie Log (SSE)</label>
+      <pre id="cookieLog" class="log">—</pre>
     </div>
   </div>
 
 <script>
 (() => {
   const adminInput = document.getElementById('adminToken');
-  adminInput.value = localStorage.getItem('adminToken') || '';
-  const textCookies = document.getElementById('textCookies');
+  const saveTokenBtn = document.getElementById('saveToken');
+  const uploadForm = document.getElementById('uploadForm');
   const fileInput = document.getElementById('fileInput');
-  const uploadBtn = document.getElementById('uploadBtn');
+  const textCookies = document.getElementById('textCookies');
+  const autoStart = document.getElementById('autoStart');
+  const targetInput = document.getElementById('target');
   const uploadResult = document.getElementById('uploadResult');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const clearBtn = document.getElementById('clearBtn');
   const cookieTableBody = document.querySelector('#cookieTable tbody');
   const summaryEl = document.getElementById('summary');
   const cookieLog = document.getElementById('cookieLog');
-  const refreshBtn = document.getElementById('refreshBtn');
-  const clearBtn = document.getElementById('clearBtn');
+  const connectSSEBtn = document.getElementById('connectSSEBtn');
+  const disconnectSSEBtn = document.getElementById('disconnectSSEBtn');
 
-  function appendLog(s){ cookieLog.textContent += `[${new Date().toLocaleTimeString()}] ${s}\n`; cookieLog.scrollTop = cookieLog.scrollHeight; }
-  fileInput.addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const txt = await f.text();
-    textCookies.value = txt;
-    appendLog('File loaded: ' + f.name);
+  let eventSource = null;
+  let lastSession = null;
+
+  // load saved token
+  adminInput.value = localStorage.getItem('adminToken') || '';
+
+  saveTokenBtn.addEventListener('click', () => {
+    const v = adminInput.value.trim();
+    if (!v) return alert('Enter admin token first');
+    localStorage.setItem('adminToken', v);
+    alert('Admin token saved locally');
   });
 
-  uploadBtn.addEventListener('click', async () => {
-    const token = adminInput.value.trim();
-    if(!token) return alert('Set admin token');
-    localStorage.setItem('adminToken', token);
-    const text = textCookies.value.trim();
-    const file = fileInput.files[0];
-    if (!file && !text) return alert('Provide file or paste cookies');
-    const fd = new FormData();
-    if (file) fd.append('cookies', file); else fd.append('text', text);
-    const sid = 'sess-' + Date.now();
-    appendLog('Uploading cookies...');
+  // helper logs
+  function now(){ return new Date().toLocaleTimeString(); }
+  function appendLog(s){
+    cookieLog.textContent += `[${now()}] ${s}\n`;
+    cookieLog.scrollTop = cookieLog.scrollHeight;
+  }
+
+  // SSE connect (to a given session)
+  function connectSSE(sid){
+    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
+    if (!token) { alert('Admin token required to connect SSE'); return; }
+    disconnectSSE();
+    lastSession = sid || 'default';
+    const url = `/events?sessionId=${encodeURIComponent(lastSession)}&adminToken=${encodeURIComponent(token)}`;
+    appendLog('Connecting SSE -> ' + url);
     try {
-      const r = await fetch(`/uploadCookies?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`, { method:'POST', body: fd });
-      const j = await r.json();
-      uploadResult.textContent = JSON.stringify(j);
-      appendLog('Upload response: ' + JSON.stringify(j));
-      // open SSE to watch validation logs
-      watchSession(sid);
-      setTimeout(() => fetchList(), 700);
+      eventSource = new EventSource(url);
     } catch (e) {
-      appendLog('Upload error: ' + (e && e.message));
+      appendLog('EventSource create failed: ' + (e && e.message));
+      return;
+    }
+    eventSource.onopen = () => appendLog('SSE connected');
+    eventSource.onmessage = (e) => appendLog('[msg] ' + e.data);
+    // handle cookieStatus and other events
+    const evs = ['cookieStatus','log','info','warn','error','success','screenshot'];
+    evs.forEach(ev => {
+      eventSource.addEventListener(ev, (evt) => {
+        try {
+          const d = JSON.parse(evt.data);
+          appendLog(`[${ev}] ${JSON.stringify(d)}`);
+          if (ev === 'cookieStatus') {
+            // update cookie list after status event
+            setTimeout(() => fetchCookieList().catch(()=>{}), 300);
+          }
+        } catch(err){
+          appendLog(`[${ev}] ${evt.data}`);
+        }
+      });
+    });
+    eventSource.onerror = (e) => { appendLog('SSE error/closed'); };
+  }
+  function disconnectSSE(){
+    if (eventSource) {
+      try { eventSource.close(); } catch(e){}
+      eventSource = null;
+      appendLog('SSE disconnected');
+    }
+  }
+
+  connectSSEBtn.addEventListener('click', () => {
+    const sid = prompt('Session id (leave blank for default):','default') || 'default';
+    connectSSE(sid);
+  });
+  disconnectSSEBtn.addEventListener('click', () => disconnectSSE());
+
+  // Upload form
+  uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
+    if (!token) return alert('Set admin token first');
+    const file = fileInput.files[0];
+    const text = textCookies.value.trim();
+    if (!file && !text) return alert('Provide file or paste cookies text');
+    const sid = 'sess-' + Date.now();
+    appendLog('Uploading cookies, session=' + sid);
+    const form = new FormData();
+    if (file) form.append('cookies', file);
+    else form.append('text', text);
+
+    try {
+      const res = await fetch(`/uploadCookies?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`, {
+        method:'POST',
+        body: form
+      });
+      const j = await res.json().catch(()=>({ok:false, error:'invalid-json'}));
+      uploadResult.textContent = 'Upload response: ' + JSON.stringify(j);
+      appendLog('Upload finished: ' + JSON.stringify(j));
+      // connect SSE to this session to watch validation
+      connectSSE(sid);
+      lastSession = sid;
+
+      // if auto-start and target provided -> start runner
+      if (autoStart.checked) {
+        const target = targetInput.value.trim();
+        if (!target) appendLog('Auto-start requested but no target provided');
+        else {
+          appendLog('Auto-starting runner for session ' + sid);
+          // start job via /start
+          try {
+            const startRes = await fetch('/start', {
+              method:'POST',
+              headers: { 'Content-Type':'application/json', 'x-admin-token': token },
+              body: JSON.stringify({ sessionId: sid, targetUrl: target })
+            });
+            const sj = await startRes.json().catch(()=>({}));
+            appendLog('Start response: ' + JSON.stringify(sj));
+          } catch (se) { appendLog('Start error: ' + (se && se.message)); }
+        }
+      }
+
+      // refresh list shortly
+      setTimeout(() => fetchCookieList().catch(()=>{}), 700);
+    } catch (err) {
+      appendLog('Upload error: ' + (err && err.message));
+      uploadResult.textContent = 'Upload error: ' + (err && err.message);
     }
   });
 
-  async function fetchList(){
+  // fetch cookie list
+  async function fetchCookieList(){
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return appendLog('Set admin token to fetch list');
+    if (!token) { appendLog('Cannot fetch cookie list: admin token missing'); return; }
     try {
       const r = await fetch(`/cookieList?adminToken=${encodeURIComponent(token)}`);
+      if (!r.ok) { appendLog('cookieList fetch returned non-200'); return; }
       const j = await r.json();
-      if (!j) return appendLog('Bad cookieList response');
-      summaryEl.textContent = JSON.stringify(j.counts);
-      cookieTableBody.innerHTML = '';
-      (j.cookies || []).forEach(c => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${c.lineIndex ?? '-'}</td><td title="${(c.originalLine||'').replace(/"/g,'&quot;')}">${c.snippet || ''}</td><td>${(c.validateResult && c.validateResult.status) || (c.isAccount ? 'parsed' : 'invalid')}</td><td>${(c.validateResult && (c.validateResult.reason || c.validateResult.url)) || ''}</td><td>${c.parsedAt || ''}</td>`;
-        cookieTableBody.appendChild(tr);
-      });
-      appendLog('Cookie list loaded: ' + (j.cookies||[]).length);
-    } catch (e) { appendLog('fetchList err: ' + (e && e.message)); }
+      renderCookieList(j);
+    } catch(e){ appendLog('fetchCookieList error: '+ (e && e.message)); }
   }
 
-  refreshBtn.addEventListener('click', fetchList);
+  function renderCookieList(payload) {
+    const { counts = {}, cookies = [] } = payload || {};
+    summaryEl.textContent = 'Summary: ' + JSON.stringify(counts);
+    cookieTableBody.innerHTML = '';
+    (cookies || []).forEach(c => {
+      const tr = document.createElement('tr');
+      const td1 = document.createElement('td'); td1.textContent = c.lineIndex ?? '-';
+      const td2 = document.createElement('td'); td2.textContent = c.snippet || (c.originalLine||'').slice(0,80);
+      const td3 = document.createElement('td'); const status = (c.validateResult && c.validateResult.status) ? c.validateResult.status : (c.isAccount ? 'parsed' : 'invalid'); td3.textContent = status;
+      const td4 = document.createElement('td'); td4.textContent = (c.validateResult && (c.validateResult.reason || c.validateResult.url)) ? (c.validateResult.reason || c.validateResult.url) : '';
+      const td5 = document.createElement('td'); td5.textContent = c.parsedAt || '';
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
+      cookieTableBody.appendChild(tr);
+    });
+    appendLog('cookie list rendered: ' + (cookies ? cookies.length : 0));
+  }
+
+  refreshBtn.addEventListener('click', () => fetchCookieList());
   clearBtn.addEventListener('click', async () => {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return alert('Set admin token');
+    if (!token) return alert('Set admin token first');
     if (!confirm('Clear cookie index?')) return;
     try {
-      const r = await fetch('/cookieIndex/clear', { method:'POST', headers: { 'Content-Type':'application/json', 'x-admin-token': token } });
-      const j = await r.json();
+      const r = await fetch('/cookieIndex/clear', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-admin-token': token } });
+      const j = await r.json().catch(()=>({}));
       appendLog('Clear index: ' + JSON.stringify(j));
-      fetchList();
-    } catch (e) { appendLog('clear err: ' + (e && e.message)); }
+      fetchCookieList();
+    } catch(e){ appendLog('clear error: ' + (e && e.message)); }
   });
 
-  // SSE watcher for the upload/start session
-  let es = null;
-  function watchSession(sid){
-    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return appendLog('Set admin token to watch session');
-    if (es) es.close();
-    es = new EventSource(`/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`);
-    es.addEventListener('cookieStatus', (e) => { try { const d = JSON.parse(e.data); appendLog('[cookieStatus] ' + JSON.stringify(d)); setTimeout(fetchList, 300); } catch(_) { appendLog('[cookieStatus] ' + e.data); } });
-    ['log','info','warn','error','done','success','fatal'].forEach(ev => {
-      es.addEventListener(ev, (evt) => { try { const d = JSON.parse(evt.data); appendLog(`[${ev}] ${JSON.stringify(d)}`); } catch(_) { appendLog(`[${ev}] ${evt.data}`); } });
-    });
-    es.onerror = () => appendLog('SSE error/closed');
-  }
+  // preload file to textarea when chosen
+  fileInput.addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      const txt = await f.text();
+      textCookies.value = txt;
+      appendLog('File loaded to paste area ('+f.name+')');
+    } catch(err){ appendLog('File read error: ' + (err && err.message)); }
+  });
 
-  // auto-load if token present
+  // initial load
   window.addEventListener('load', () => {
-    const t = localStorage.getItem('adminToken');
-    if (t) { adminInput.value = t; fetchList().catch(()=>{}); }
+    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
+    if (token) fetchCookieList().catch(()=>{});
   });
+
+  // expose for console
+  window.__cookie = { connectSSE, disconnectSSE, fetchCookieList };
 
 })();
 </script>
