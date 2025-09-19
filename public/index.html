@@ -6,35 +6,108 @@
   <title>Facebook Automation Tool</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
   <style>
-    /* (same styles as you provided — unchanged) */
-    :root{ --blue:#1869ff; --muted:#9aa3b2; --card:#ffffff; --page-bg:#f4f7fb; --accent:#ff4d4f; --soft:#eef4ff; --radius:14px; --container-max:980px; }
-    *{box-sizing:border-box} html,body{height:100%}
-    body{ font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--page-bg); margin:0; padding:24px; color:#0f1724; display:flex; flex-direction:column; min-height:100vh; align-items:center; }
+    :root{
+      --blue:#1869ff;
+      --muted:#9aa3b2;
+      --card:#ffffff;
+      --page-bg:#f4f7fb;
+      --accent:#ff4d4f;
+      --soft:#eef4ff;
+      --radius:14px;
+      --container-max:980px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background:var(--page-bg);
+      margin:0; padding:24px;
+      color:#0f1724;
+      display:flex; flex-direction:column; min-height:100vh;
+      align-items:center;
+    }
     .page { width:100%; max-width:var(--container-max); }
-    .top-row { display:flex; gap:20px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; justify-content:center; }
-    .header-wrap { background: #071025; border-radius:18px; padding:26px 28px; color:#dbeafe; box-shadow: 0 14px 40px rgba(2,6,23,0.45); display:flex; flex-direction:column; align-items:center; text-align:center; flex: 1 1 60%; min-width:260px; max-width:calc(60% - 10px); }
-    .header-title { white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; display: inline-block !important; max-width: 100% !important; font-size: clamp(16px, 4.6vw, 36px) !important; line-height: 1 !important; transform: none !important; }
+
+    .top-row {
+      display:flex; gap:20px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; justify-content:center;
+    }
+
+    .header-wrap {
+      background: #071025; border-radius:18px; padding:26px 28px; color:#dbeafe;
+      box-shadow: 0 14px 40px rgba(2,6,23,0.45);
+      display:flex; flex-direction:column; align-items:center; text-align:center;
+      flex: 1 1 60%; min-width:260px; max-width:calc(60% - 10px);
+    }
+    .header-title {
+      white-space: nowrap !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+      display: inline-block !important;
+      max-width: 100% !important;
+      font-size: clamp(16px, 4.6vw, 36px) !important;
+      line-height: 1 !important;
+      transform: none !important;
+    }
     .header-meta { font-size:14px; color: #9fb4d3; margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
+    .header-meta strong { color:#fff; font-weight:800; }
     .team-badge { margin-top:10px; color:#4fb0ff; font-weight:900; letter-spacing:0.6px; font-size:15px; }
+
     .card { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px; }
     .report-card { padding:18px; border-radius:16px; display:block; flex:1 1 36%; min-width:300px; max-width:calc(40% - 10px); }
-    @media(max-width:900px){ .header-wrap, .report-card { max-width:100%; flex-basis:100%; } .header-title { font-size: clamp(20px, 7vw, 34px); white-space: normal; } }
+
+    @media(max-width:900px){
+      .header-wrap, .report-card { max-width:100%; flex-basis:100%; }
+      .header-title { font-size: clamp(20px, 7vw, 34px); white-space: normal; }
+    }
+
     .section-title { font-size:18px; font-weight:800; margin-bottom:6px; }
     .section-sub { color:var(--muted); margin-bottom:12px; font-size:13px; }
+
     .radio-row { display:grid; grid-template-columns: repeat(1, 1fr); gap:12px; margin-top:6px; }
     .radio-pill { display:flex; align-items:center; gap:10px; padding:12px 18px; border-radius:999px; background:var(--soft); border:1px solid transparent; font-weight:700; color:#0b1220; justify-content:center; min-height:48px; }
+    .radio-pill input{ transform:scale(1.05); margin-right:8px; }
+
     .token-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
     .token-row input[type=text] { flex:1; padding:12px 14px; border-radius:12px; border:1px solid #e8eefb; background:#fbfdff; font-weight:600; color:#0b1220; }
     .btn { cursor:pointer; border:0; padding:10px 16px; border-radius:12px; font-weight:700; }
     .btn-ghost { background:transparent; border:1px solid #cfe0ff; color:var(--blue); padding:10px 14px; border-radius:12px; }
+    .btn-upload { background:transparent; border:1px solid #dfefff; color:var(--blue); padding:12px 18px; border-radius:14px; font-weight:800; }
     .btn-start { background:var(--blue); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 14px 36px rgba(24,105,255,0.14); }
     .btn-stop { background:var(--accent); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 12px 28px rgba(255,77,79,0.12); }
+
     .target input { width:100%; padding:14px; border-radius:12px; border:1px solid #e6eef9; }
+
     .options-list { margin-top:12px; display:grid; gap:12px; }
     .option-item { display:flex; gap:12px; align-items:center; padding:14px; border-radius:12px; border:1px solid #eef3fb; background:white; font-weight:700; font-size:15px; }
+    .option-item input{ width:20px; height:20px; transform:scale(1.05); }
+
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+    th, td { padding:8px 10px; border-bottom:1px solid #eef2f6; text-align:left; vertical-align:top; }
+    th { background:#fbfdff; font-weight:800; font-size:13px; }
+    .snippet { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+    .reason { max-width:280px; word-break:break-all; font-size:12px; color:#333; }
+    .status-live { color: #059669; font-weight:800; }
+    .status-invalid { color:#dc2626; font-weight:800; }
+    .status-parsed { color:#374151; font-weight:700; }
+    .status-error { color: #b45309; font-weight:800; }
+
     .log-area { background:#000; color:#66ff99; padding:14px; border-radius:8px; height:320px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap; }
+    #cookieLog { background:#0b1220; color:#9fe0ff; padding:10px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; font-size:12px; }
+
+    .logs-card { padding:22px; border-radius:16px; background: linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0; box-shadow: 0 14px 40px rgba(2,6,23,0.45); margin-top:12px; }
+    .log-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; font-size:18px; color:#f1d4ff; }
     pre.log-area{ background:#000; color:#66ff99; padding:22px; border-radius:12px; height:360px; overflow:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; font-size:15px; border: 1px solid rgba(255,255,255,0.04); box-shadow: inset 0 6px 20px rgba(0,0,0,0.6); white-space:pre-wrap; }
+
+    textarea#textCookies { width:100%; min-height:120px; padding:12px; border-radius:10px; border:1px solid #e6eef9; resize:vertical; font-family:inherit; font-size:13px; }
+    input[type=file] { font-size:13px; }
+
     footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); padding:12px 0; }
+
+    /* small helpers for control panel */
+    .control-panel { display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+    .control-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .ctrl-btn { background:#fff; border:1px solid #e6eef9; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:800; color:var(--blue); }
+    .link-btn { background:#f8fbff; border:1px solid #dfefff; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; color:var(--blue); }
   </style>
 </head>
 <body>
@@ -81,21 +154,29 @@
       </div>
     </div>
 
-    <!-- CONTROL PANEL (NEW) -->
-    <div class="card" role="region" aria-label="Control Panel" style="display:flex; flex-direction:column; gap:12px;">
+    <!-- Control Panel (replaced Cookie Manager) -->
+    <div class="card" role="region" aria-label="Control Panel">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <div style="font-weight:800; font-size:16px">Control Panel</div>
         <div class="small">Quick links to Live preview & Cookie manager pages</div>
       </div>
 
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <a href="/live.html"><button class="btn btn-ghost">See Live</button></a>
-        <a href="/cookies.html"><button class="btn btn-ghost">Cookie Manager</button></a>
-        <button id="startBtn" class="btn btn-start">Start Runner</button>
-        <button id="stopBtn" class="btn btn-stop">Stop Runner</button>
-      </div>
+      <div class="control-panel" style="margin-top:10px;">
+        <div class="control-row">
+          <button id="seeLive" class="link-btn">See Live</button>
+          <button id="cookieMgr" class="link-btn">Cookie Manager</button>
+        </div>
 
-      <div style="font-size:13px; color:var(--muted)">Note: Cookie upload & detailed list moved to Cookie Manager page.</div>
+        <div style="font-weight:800; margin-top:6px;">Runner Controls</div>
+        <div class="control-row">
+          <button id="startBtnPanel" class="btn-start">Start Runner</button>
+          <button id="stopBtnPanel" class="btn-stop">Stop Runner</button>
+        </div>
+
+        <div class="small" style="color:var(--muted); margin-top:8px;">
+          Note: Cookie upload & detailed list moved to Cookie Manager page.
+        </div>
+      </div>
     </div>
 
     <!-- Live logs -->
@@ -112,20 +193,21 @@
 
 <script>
 (() => {
-  // Keep your original index JS mostly intact for options + start/stop/log.
-  // Small changes: no cookie upload here; links go to /cookies.html and /live.html
-
+  // Elements
   const adminInput = document.getElementById('adminToken');
   const saveTokenBtn = document.getElementById('saveToken');
   const logArea = document.getElementById('logArea');
   const autoScroll = document.getElementById('autoScroll');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
+  const startBtnPanel = document.getElementById('startBtnPanel');
+  const stopBtnPanel = document.getElementById('stopBtnPanel');
+  const seeLiveBtn = document.getElementById('seeLive');
+  const cookieMgrBtn = document.getElementById('cookieMgr');
   const targetInput = document.getElementById('target');
 
   let eventSource = null;
   let lastSession = null;
 
+  /* --- OPTION SETS + renderer (unchanged from earlier) --- */
   const OPTION_SETS = {
     profile: [
       'Problem involving someone under 18',
@@ -149,12 +231,6 @@
     ]
   };
 
-  function appendLog(s){
-    logArea.textContent += `[${new Date().toLocaleTimeString()}] ${s}\n`;
-    if (autoScroll.checked) logArea.scrollTop = logArea.scrollHeight;
-  }
-
-  // render options
   function renderOptions(type){
     const optionsBox = document.getElementById('optionsBox');
     if(!optionsBox) return;
@@ -175,8 +251,17 @@
       optionsBox.appendChild(div);
     });
   }
+
+  // initial render of options based on selected radio
   document.querySelectorAll('input[name=rtype]').forEach(r => r.addEventListener('change', (e) => renderOptions(e.target.value)));
   renderOptions(document.querySelector('input[name=rtype]:checked').value);
+
+  // helpers
+  function nowTime(){ return new Date().toLocaleTimeString(); }
+  function appendLog(s){
+    logArea.textContent += `[${nowTime()}] ${s}\n`;
+    if (autoScroll.checked) logArea.scrollTop = logArea.scrollHeight;
+  }
 
   // admin token save/load
   adminInput.value = localStorage.getItem('adminToken') || '';
@@ -187,14 +272,7 @@
     alert('Admin token saved locally');
   });
 
-  function disconnectSSE(){
-    if (eventSource) {
-      try { eventSource.close(); } catch(e){}
-      eventSource = null;
-      appendLog('SSE disconnected');
-    }
-  }
-
+  // SSE connect helper
   function connectSSE(sid){
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { appendLog('Admin token missing for SSE'); return; }
@@ -203,24 +281,46 @@
     lastSession = sid;
     const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
     appendLog('Connecting SSE: ' + url);
-    eventSource = new EventSource(url);
+    try {
+      eventSource = new EventSource(url);
+    } catch (e) {
+      appendLog('EventSource creation failed: ' + (e && e.message));
+      return;
+    }
     eventSource.onopen = () => appendLog('SSE connected');
-    eventSource.onmessage = (e) => appendLog('[msg] ' + e.data);
-    const named = ['log','info','warn','error','done','success','fatal'];
+    eventSource.onmessage = (e) => {
+      appendLog('[msg] ' + e.data);
+    };
+    const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
     named.forEach(ev=>{
       eventSource.addEventListener(ev, (evt) => {
         try {
+          // screenshot events may be JSON with {b64,len,ts}
           const d = JSON.parse(evt.data);
-          appendLog(`[${ev}] ${JSON.stringify(d)}`);
+          if (ev === 'screenshot') {
+            // if we want to show a small image preview in the page we could, but index page intentionally keeps it minimal.
+            appendLog(`[screenshot] len:${d.length} ts:${new Date(d.timestamp).toLocaleTimeString()}`);
+          } else {
+            appendLog(`[${ev}] ${JSON.stringify(d)}`);
+          }
         } catch(err){
           appendLog(`[${ev}] ${evt.data}`);
         }
       });
     });
-    eventSource.onerror = () => appendLog('SSE error/closed');
+    eventSource.onerror = (e) => {
+      appendLog('SSE error/closed');
+    };
+  }
+  function disconnectSSE(){
+    if (eventSource) {
+      try { eventSource.close(); } catch(e){}
+      eventSource = null;
+      appendLog('SSE disconnected');
+    }
   }
 
-  // start job (uses /start)
+  // start job
   async function startJob(opts = {}) {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) return alert('Set admin token first');
@@ -237,7 +337,11 @@
         body: JSON.stringify({ sessionId: sid, targetUrl: target, setType })
       });
       const j = await res.json();
-      if (!j.ok) { appendLog('Start failed: ' + JSON.stringify(j)); alert('Start failed: ' + (j.message || JSON.stringify(j))); return; }
+      if (!j.ok) {
+        appendLog('Start failed: ' + JSON.stringify(j));
+        alert('Start failed: ' + (j.message || JSON.stringify(j)));
+        return;
+      }
       appendLog('Job started: sessionId=' + sid);
       lastSession = sid;
       connectSSE(sid);
@@ -246,6 +350,7 @@
     }
   }
 
+  // stop job
   async function stopJob() {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) return alert('Set admin token first');
@@ -266,12 +371,28 @@
   }
 
   // UI bindings
-  startBtn.addEventListener('click', () => startJob({}));
-  stopBtn.addEventListener('click', () => stopJob());
+  startBtnPanel.addEventListener('click', () => startJob({}));
+  stopBtnPanel.addEventListener('click', () => stopJob());
 
-  // expose for debug
+  seeLiveBtn.addEventListener('click', () => {
+    // redirect to live preview page
+    window.location.href = '/live.html';
+  });
+  cookieMgrBtn.addEventListener('click', () => {
+    window.location.href = '/cookie.html';
+  });
+
+  // expose for console debugging
   window.__tool = { connectSSE, disconnectSSE, startJob, stopJob };
 
+  // auto connect SSE to default session if token present
+  window.addEventListener('load', () => {
+    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
+    if (token) {
+      // do not auto-start job, but allow SSE connect via the control panel manually
+      appendLog('Token present. Use Connect from Control Panel or press Start Runner.');
+    }
+  });
 })();
 </script>
 </body>
