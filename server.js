@@ -90,7 +90,8 @@ async function launchBrowserWithFallback(opts = {}) {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-software-rasterizer',
-      '--disable-extensions'
+      '--disable-extensions',
+      '--disable-background-timer-throttling'
     ])
   };
 
@@ -232,9 +233,22 @@ function sseSend(sid, event, payload) {
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     } catch (e) {
       // remove broken client
-      sess.clients.delete(res);
+      try { sess.clients.delete(res); } catch(_) {}
     }
   }
+}
+
+// UTIL: clear all preview intervals for a session (very important)
+function clearAllPreviewIntervals(sessionId) {
+  const sess = getSession(sessionId);
+  try {
+    for (const [idObj, info] of sess.previewIntervals.entries()) {
+      try {
+        clearInterval(info.intervalId || idObj);
+      } catch (e) {}
+      sess.previewIntervals.delete(idObj);
+    }
+  } catch (e) { simpleLog('clearAllPreviewIntervals-error', e && e.message); }
 }
 
 // attachLivePreview(page): periodically screenshot and send base64 via SSE 'screenshot' event
@@ -246,9 +260,9 @@ function attachLivePreview(sessionId, page, opts = {}) {
   const id = setInterval(async () => {
     if (stopped) return;
     try {
-      if (!page || (page.isClosed && page.isClosed())) {
+      if (!page || (typeof page.isClosed === 'function' ? page.isClosed() : false)) {
         clearInterval(id);
-        sess.previewIntervals.delete(id);
+        try { sess.previewIntervals.delete(id); } catch(_) {}
         return;
       }
       // take screenshot; small size for speed
@@ -642,6 +656,9 @@ async function reportRunner(sessionId, opts = {}) {
 
     // cleanup
     try {
+      // clear preview intervals explicitly
+      clearAllPreviewIntervals(sessionId);
+
       if (browser) {
         try { await browser.close(); } catch (e) { simpleLog('browser-close-final', e && e.message); }
       }
@@ -912,15 +929,23 @@ app.post('/start', requireAdmin, (req, res) => {
 app.post('/stop', requireAdmin, async (req, res) => {
   const sessionId = req.body.sessionId || 'default';
   const sess = getSession(sessionId);
-  if (!sess.running) return res.json({ ok:false, message:'No active job' });
+  if (!sess.running) {
+    // still clear preview intervals to be safe
+    clearAllPreviewIntervals(sessionId);
+    return res.json({ ok:false, message:'No active job' });
+  }
   sess.abort = true;
   sseSend(sessionId,'info',{msg:'Stop requested by user'});
   try {
+    // close pages & contexts
     for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
     sess.pages = [];
     for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
     sess.contexts = [];
+    // close browser
     if (sess.browser) { try { await sess.browser.close(); } catch(e) {} sess.browser = null; }
+    // clear any preview intervals
+    clearAllPreviewIntervals(sessionId);
   } catch (e) { simpleLog('stop-cleanup-error', e && e.message); }
   return res.json({ ok:true, message:'Stop requested and cleanup attempted' });
 });
@@ -965,6 +990,8 @@ async function gracefulShutdown() {
       for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
       for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
       if (sess.browser) { try { await sess.browser.close(); } catch(e) {} }
+      // clear preview intervals too
+      clearAllPreviewIntervals(sid);
     } catch (e) {}
   }
   process.exit(0);
