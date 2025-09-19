@@ -70,7 +70,18 @@ async function resolveExecutablePath() {
 }
 async function launchBrowserWithFallback(opts = {}) {
   const execPath = await resolveExecutablePath();
-  const headless = typeof opts.headless === 'boolean' ? opts.headless : DEFAULT_HEADLESS;
+
+  // Determine headless: prefer explicit opts.headless, else env HEADLESS, else default true
+  let headless;
+  if (typeof opts.headless === 'boolean') headless = opts.headless;
+  else if (process.env.HEADLESS !== undefined) headless = !(String(process.env.HEADLESS).toLowerCase() === 'false');
+  else headless = true; // safe default
+
+  // If there's no DISPLAY (no X server) — force headless true.
+  if (!process.env.DISPLAY) {
+    headless = true;
+  }
+
   const launchOpts = {
     headless,
     args: (opts.args || []).concat([
@@ -82,10 +93,13 @@ async function launchBrowserWithFallback(opts = {}) {
       '--disable-extensions'
     ])
   };
+
   if (execPath) launchOpts.executablePath = execPath;
-  simpleLog('Launching Chromium', execPath ? ('from ' + execPath) : '(playwright managed)', 'headless=' + headless);
+
+  simpleLog('Launching Playwright Chromium', execPath ? ('from ' + execPath) : '(playwright managed)', 'headless=' + headless);
   try {
-    return await chromium.launch(launchOpts);
+    const browser = await chromium.launch(launchOpts);
+    return browser;
   } catch (err) {
     simpleLog('playwright.launch failed:', err && err.message);
     throw err;
