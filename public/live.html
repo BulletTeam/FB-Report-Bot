@@ -1,181 +1,95 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Live Preview — FB Automation</title>
+  <title>Live Preview — Facebook Tool</title>
   <style>
-    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#0f1724;color:#e6eef8}
-    .wrap{max-width:1200px;margin:18px auto;padding:18px}
-    .hdr{display:flex;gap:12px;align-items:center;justify-content:space-between}
-    .hdr h1{font-size:18px;margin:0}
-    .controls{display:flex;gap:8px;align-items:center}
-    input[type=text]{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
-    button{padding:8px 12px;border-radius:8px;border:0;background:#1869ff;color:#fff;cursor:pointer}
-    .main{display:grid;grid-template-columns: 1fr 360px;gap:14px;margin-top:14px}
-    .preview{background:#071025;border-radius:10px;padding:10px;height:640px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px}
-    .screen{background:#000;border-radius:8px;overflow:hidden;max-width:100%;height:520px;display:flex;align-items:center;justify-content:center}
-    .screen img{max-width:100%;max-height:100%;display:block}
-    .meta{width:100%;display:flex;justify-content:space-between;gap:8px;color:#9fb4d3}
-    .logs{background:#061022;padding:10px;border-radius:8px;height:80px;overflow:auto;font-family:monospace;font-size:13px;color:#9fe0ff}
-    .side{display:flex;flex-direction:column;gap:10px}
-    .card{background:#071827;padding:12px;border-radius:10px}
-    label.small{font-size:12px;color:#9fb4d3}
-    .badge{background:#06263a;padding:6px 8px;border-radius:8px;color:#8be0ff;font-weight:700}
+    body{ font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto; padding:18px; background:#f4f7fb; color:#0f1724; }
+    .wrap{ max-width:980px; margin:0 auto; }
+    h1{ margin:0 0 12px 0; font-size:20px; }
+    .controls{ display:flex; gap:8px; margin-bottom:12px; align-items:center; }
+    .btn{ padding:8px 12px; border-radius:8px; border:0; cursor:pointer; }
+    .live-img{ width:100%; max-height:640px; object-fit:contain; background:#000; border-radius:8px; display:block; margin-bottom:12px; }
+    .log{ background:#000; color:#66ff99; padding:12px; height:220px; overflow:auto; border-radius:8px; font-family:monospace; white-space:pre-wrap; }
+    .meta{ margin-bottom:8px; color:#666; font-size:13px; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="hdr">
-      <h1>Live Preview — Browser Activity</h1>
-      <div class="controls">
-        <input id="adminToken" type="text" placeholder="x-admin-token" aria-label="admin token" />
-        <input id="sessionId" type="text" placeholder="sessionId (default)" style="width:160px" />
-        <button id="connectBtn">Connect</button>
-        <button id="disconnectBtn" disabled>Disconnect</button>
-      </div>
+    <h1>Live Browser Preview</h1>
+    <div class="meta">This view receives screenshots (base64) and live logs from the server session.</div>
+    <div class="controls">
+      <input id="adminToken" placeholder="x-admin-token" style="padding:8px 10px; border-radius:8px; border:1px solid #ddd;" />
+      <button id="connect" class="btn">Connect SSE</button>
+      <button id="disconnect" class="btn">Disconnect</button>
+      <span id="status" style="margin-left:8px;color:#333;"></span>
     </div>
 
-    <div class="main">
-      <div class="preview">
-        <div class="meta">
-          <div><strong>Current URL:</strong> <span id="curUrl">-</span></div>
-          <div><span class="badge" id="statusBadge">disconnected</span></div>
-        </div>
-
-        <div class="screen" id="screenArea">
-          <div id="screenPlaceholder" style="color:#9fb4d3">No screenshot yet</div>
-          <!-- <img id="screenImg" src="" alt="screenshot" /> -->
-        </div>
-
-        <div class="logs" id="activityLog">— activity log —</div>
+    <img id="liveImg" class="live-img" src="" alt="Live screenshot will appear here" />
+    <div style="display:flex; gap:12px;">
+      <div style="flex:1">
+        <div style="font-weight:800; margin-bottom:6px;">Live Log</div>
+        <pre id="log" class="log">—</pre>
       </div>
-
-      <div class="side">
-        <div class="card">
-          <div style="font-weight:800">Connection</div>
-          <div style="margin-top:8px"><label class="small">Auto-reconnect:</label> <input id="autoReconnect" type="checkbox" checked /></div>
-          <div style="margin-top:8px"><label class="small">Screenshot decode:</label> <select id="decodeMode"><option value="raw">raw base64</option><option value="json">wrapped JSON</option></select></div>
-        </div>
-
-        <div class="card">
-          <div style="font-weight:800">Activity</div>
-          <div style="margin-top:8px"><strong>Last event:</strong> <span id="lastEvent">none</span></div>
-          <div style="margin-top:6px"><strong>Last screenshot:</strong> <span id="lastSsTime">-</span></div>
-        </div>
-
-        <div class="card">
-          <div style="font-weight:800">Quick actions</div>
-          <div style="display:flex;gap:8px;margin-top:8px"><button id="clearLog">Clear log</button><button id="openLiveTab">Open in new tab</button></div>
-        </div>
+      <div style="width:240px">
+        <div style="font-weight:800; margin-bottom:6px;">Session</div>
+        <input id="sessionId" placeholder="session id (default)" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd;" />
+        <div style="margin-top:8px; font-size:13px; color:#666;">If not set, use 'default' or the session created on upload/start.</div>
       </div>
     </div>
   </div>
 
 <script>
 (() => {
-  const adminEl = document.getElementById('adminToken');
-  const sidEl = document.getElementById('sessionId');
-  const connectBtn = document.getElementById('connectBtn');
-  const disconnectBtn = document.getElementById('disconnectBtn');
-  const curUrl = document.getElementById('curUrl');
-  const statusBadge = document.getElementById('statusBadge');
-  const activityLog = document.getElementById('activityLog');
-  const screenArea = document.getElementById('screenArea');
-  const screenPlaceholder = document.getElementById('screenPlaceholder');
-  const lastEvent = document.getElementById('lastEvent');
-  const lastSsTime = document.getElementById('lastSsTime');
-  const autoReconnect = document.getElementById('autoReconnect');
-  const clearLogBtn = document.getElementById('clearLog');
-  const openLiveTab = document.getElementById('openLiveTab');
-  const decodeMode = document.getElementById('decodeMode');
+  const connectBtn = document.getElementById('connect');
+  const disconnectBtn = document.getElementById('disconnect');
+  const liveImg = document.getElementById('liveImg');
+  const logEl = document.getElementById('log');
+  const statusEl = document.getElementById('status');
+  const adminInput = document.getElementById('adminToken');
+  const sessionInput = document.getElementById('sessionId');
 
   let es = null;
-  let reconnectTimer = null;
-
   function appendLog(s){
-    activityLog.textContent = `[${new Date().toLocaleTimeString()}] ${s}
-` + activityLog.textContent;
+    logEl.textContent = (logEl.textContent === '—' ? '' : logEl.textContent + '\n') + s;
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function showScreenshotFromBase64(b64){
-    lastSsTime.textContent = new Date().toLocaleTimeString();
-    // create/replace img
-    let img = document.getElementById('screenImg');
-    if (!img) {
-      img = document.createElement('img');
-      img.id = 'screenImg';
-      screenArea.innerHTML = '';
-      screenArea.appendChild(img);
-    }
-    img.src = 'data:image/png;base64,' + b64;
-  }
-
-  function connect(){
-    const token = adminEl.value.trim();
-    const sid = sidEl.value.trim() || 'default';
-    if (!token) return alert('Enter admin token');
+  connectBtn.addEventListener('click', () => {
+    const token = adminInput.value.trim();
+    if(!token) return alert('Enter admin token');
+    const sid = sessionInput.value.trim() || 'default';
     const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
-    appendLog('Connecting SSE -> ' + url);
+    if (es) es.close();
     es = new EventSource(url);
-    statusBadge.textContent = 'connecting';
-    es.onopen = () => { statusBadge.textContent = 'connected'; statusBadge.style.background = '#065f46'; appendLog('SSE open'); disconnectBtn.disabled = false; connectBtn.disabled = true; };
-    es.onmessage = (e) => { appendLog('[message] ' + e.data); };
-    es.addEventListener('log', (ev) => { try{ const d = JSON.parse(ev.data); appendLog('[log] ' + (d.msg||JSON.stringify(d))); if (d.url) curUrl.textContent = d.url; lastEvent.textContent = 'log'; }catch(e){ appendLog('[log] ' + ev.data); } });
-    es.addEventListener('info', (ev) => { try{ const d=JSON.parse(ev.data); appendLog('[info] ' + JSON.stringify(d)); if (d.url) curUrl.textContent = d.url; lastEvent.textContent='info'; }catch(e){ appendLog('[info] '+ev.data);} });
-    es.addEventListener('error', (ev) => { appendLog('[error] ' + (ev.data||'')); lastEvent.textContent='error'; statusBadge.textContent='error'; });
-
-    es.addEventListener('screenshot', (ev) => {
-      lastEvent.textContent = 'screenshot';
+    statusEl.textContent = 'connecting...';
+    es.onopen = () => { statusEl.textContent = 'connected'; appendLog('[SSE] connected'); };
+    es.onmessage = (m) => appendLog('[msg] ' + m.data);
+    es.addEventListener('screenshot', (e) => {
+      // data is base64 string (raw)
       try {
-        // server might send raw base64 string or JSON-wrapped
-        let payload = null;
-        try { payload = JSON.parse(ev.data); } catch(_) { payload = ev.data; }
-        if (typeof payload === 'string') {
-          showScreenshotFromBase64(payload);
-        } else if (payload && payload.data) {
-          showScreenshotFromBase64(payload.data);
-        } else if (payload && payload.img) {
-          showScreenshotFromBase64(payload.img);
-        } else {
-          appendLog('Unknown screenshot payload: ' + JSON.stringify(payload));
-        }
-      } catch (err) { appendLog('screenshot decode err: ' + err.message); }
-    });
-
-    es.onerror = (e) => {
-      appendLog('SSE error or closed');
-      statusBadge.textContent='disconnected';
-      disconnectBtn.disabled = true;
-      connectBtn.disabled = false;
-      try { es.close(); } catch(_){}
-      es = null;
-      if (autoReconnect.checked) {
-        appendLog('Auto reconnect in 1500ms');
-        reconnectTimer = setTimeout(connect, 1500);
+        const b64 = e.data;
+        // if server wrapped as JSON, try parse; otherwise treat as raw base64
+        let raw = b64;
+        try { const j = JSON.parse(b64); if (j && j.b64) raw = j.b64; } catch(_){}
+        liveImg.src = 'data:image/png;base64,' + raw;
+      } catch (err) {
+        appendLog('[screenshot] parse error: ' + err.message);
       }
-    };
-  }
+    });
+    // other useful logs
+    ['log','info','warn','error','done','success','fatal','cookieStatus'].forEach(ev => {
+      es.addEventListener(ev, (evt) => {
+        try { const d = JSON.parse(evt.data); appendLog(`[${ev}] ${JSON.stringify(d)}`); } catch(_) { appendLog(`[${ev}] ${evt.data}`); }
+      });
+    });
+    es.onerror = (e) => { appendLog('[SSE] error'); statusEl.textContent = 'error/closed'; };
+  });
 
-  function disconnect(){
-    if (es) try { es.close(); } catch(_){}
-    es = null;
-    statusBadge.textContent = 'disconnected';
-    appendLog('Disconnected');
-    disconnectBtn.disabled = true; connectBtn.disabled = false;
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  }
-
-  connectBtn.addEventListener('click', connect);
-  disconnectBtn.addEventListener('click', disconnect);
-  clearLogBtn.addEventListener('click', () => { activityLog.textContent = ''; });
-  openLiveTab.addEventListener('click', () => { window.open(location.href, '_blank'); });
-
-  // remember token/session
-  adminEl.value = localStorage.getItem('adminToken') || '';
-  sidEl.value = localStorage.getItem('liveSession') || 'default';
-  adminEl.addEventListener('change', () => localStorage.setItem('adminToken', adminEl.value.trim()));
-  sidEl.addEventListener('change', () => localStorage.setItem('liveSession', sidEl.value.trim()));
+  disconnectBtn.addEventListener('click', () => {
+    if (es) { es.close(); es = null; statusEl.textContent = 'disconnected'; appendLog('[SSE] disconnected'); }
+  });
 
 })();
 </script>
