@@ -1,5 +1,5 @@
 // server.js
-// Express + Playwright automation server with cookie index & validation
+// Final consolidated server for Playwright automation + SSE live preview + cookie index
 'use strict';
 
 const express = require('express');
@@ -10,23 +10,24 @@ const multer = require('multer');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const { EventEmitter } = require('events');
-
-const { chromium } = require('playwright'); // <-- Playwright
+const { chromium } = require('playwright');
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-// required env
+// REQUIRED: ADMIN_TOKEN must be set
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 if (!ADMIN_TOKEN) {
   console.error('FATAL: ADMIN_TOKEN not set. export ADMIN_TOKEN="your-token"');
   process.exit(1);
 }
 
-// optional env
+// optional envs
 const VALIDATE_COOKIES = process.env.VALIDATE_COOKIES === 'true';
+const DEFAULT_HEADLESS = process.env.HEADLESS === 'false' ? false : true; // default true; set HEADLESS=false to see browser
+const CHROMIUM_PATH = process.env.CHROMIUM_PATH || null;
 
-// dirs
+// directories
 const ROOT = path.resolve(__dirname);
 const UPLOAD_DIR = path.join(ROOT, 'uploads');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -38,7 +39,7 @@ for (const d of [UPLOAD_DIR, PUBLIC_DIR, LOG_DIR]) {
   try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); } catch (e) { console.error('mkdir error', d, e); process.exit(1); }
 }
 
-// logging helper
+// simple logger: writes to logs/server.log
 function simpleLog(...args) {
   try {
     const line = `[${new Date().toISOString()}] ${args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}\n`;
@@ -47,7 +48,7 @@ function simpleLog(...args) {
   } catch (e) { console.error('log-write-error', e); }
 }
 
-// load flows (optional)
+// load flows.js if exists, otherwise default stub
 let flows = { profileSets: [], pageSets: [], postSets: [] };
 try {
   if (fs.existsSync(FLOWS_PATH)) {
@@ -58,23 +59,20 @@ try {
   simpleLog('error loading flows.js', e && e.message);
   flows = { profileSets: [], pageSets: [], postSets: [] };
 }
-// fallback defaults
 if (!Array.isArray(flows.profileSets) || !flows.profileSets.length) flows.profileSets = [{ id:'default', name:'default', steps: [] }];
 if (!Array.isArray(flows.pageSets) || !flows.pageSets.length) flows.pageSets = [{ id:'default', name:'default', steps: [] }];
 if (!Array.isArray(flows.postSets) || !flows.postSets.length) flows.postSets = [{ id:'default', name:'default', steps: [] }];
 
-// ---------------- Playwright launch helpers ----------------
+// Playwright launch helper (respects CHROMIUM_PATH and headless options)
 async function resolveExecutablePath() {
-  const envPath = process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROMIUM_PATH;
-  if (envPath && fs.existsSync(envPath)) return envPath;
-  // Rely on playwright-managed browser if none specified
+  if (CHROMIUM_PATH && fs.existsSync(CHROMIUM_PATH)) return CHROMIUM_PATH;
   return null;
 }
-
 async function launchBrowserWithFallback(opts = {}) {
   const execPath = await resolveExecutablePath();
+  const headless = typeof opts.headless === 'boolean' ? opts.headless : DEFAULT_HEADLESS;
   const launchOpts = {
-    headless: typeof opts.headless === 'boolean' ? opts.headless : true,
+    headless,
     args: (opts.args || []).concat([
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -84,26 +82,22 @@ async function launchBrowserWithFallback(opts = {}) {
       '--disable-extensions'
     ])
   };
-
-  if (execPath) launchOpts.executablePath = execPath; // optional override if provided
-
-  simpleLog('Launching Playwright Chromium', execPath ? ('from ' + execPath) : '(playwright managed)');
+  if (execPath) launchOpts.executablePath = execPath;
+  simpleLog('Launching Chromium', execPath ? ('from ' + execPath) : '(playwright managed)', 'headless=' + headless);
   try {
-    const browser = await chromium.launch(launchOpts);
-    return browser;
+    return await chromium.launch(launchOpts);
   } catch (err) {
     simpleLog('playwright.launch failed:', err && err.message);
     throw err;
   }
 }
 
-// ----------------- COOKIE INDEX storage -----------------
+// ---------------- COOKIE INDEX storage -----------------
 const COOKIE_INDEX_PATH = path.join(UPLOAD_DIR, 'cookies_index.json');
 let COOKIE_INDEX = { cookies: [], counts: { total:0, live:0, invalid:0, parsed:0, error:0 } };
 
 function recalcCounts() {
-  COOKIE_INDEX.counts = { total:0, live:0, invalid:0, parsed:0, error:0 };
-  COOKIE_INDEX.counts.total = COOKIE_INDEX.cookies.length;
+  COOKIE_INDEX.counts = { total: COOKIE_INDEX.cookies.length, live:0, invalid:0, parsed:0, error:0 };
   for (const c of COOKIE_INDEX.cookies) {
     const s = c.validateResult && c.validateResult.status ? c.validateResult.status : (c.isAccount ? 'parsed' : 'invalid');
     if (s === 'live') COOKIE_INDEX.counts.live++;
@@ -112,77 +106,192 @@ function recalcCounts() {
     if (c.isAccount) COOKIE_INDEX.counts.parsed++;
   }
 }
-
 try {
   if (fs.existsSync(COOKIE_INDEX_PATH)) {
     const raw = fs.readFileSync(COOKIE_INDEX_PATH, 'utf8');
     COOKIE_INDEX = JSON.parse(raw);
     if (!COOKIE_INDEX.cookies) COOKIE_INDEX.cookies = [];
-    if (!COOKIE_INDEX.counts) COOKIE_INDEX.counts = { total:0, live:0, invalid:0, parsed:0, error:0 };
     recalcCounts();
   }
 } catch (e) { simpleLog('cookieIndex-load-error', e && e.message); }
-
 function saveCookieIndex() {
+  try { recalcCounts(); fs.writeFileSync(COOKIE_INDEX_PATH, JSON.stringify(COOKIE_INDEX, null, 2)); }
+  catch (e) { simpleLog('cookieIndex-save-err', e && e.message); }
+}
+
+// helper: parse line "k1=v1; k2=v2" -> {kv, hasCUser, hasXs, isAccount}
+function parseLineToKv(line) {
+  const parts = String(line || '').split(';').map(p => p.trim()).filter(Boolean);
+  const kv = {};
+  for (const p of parts) {
+    const idx = p.indexOf('=');
+    if (idx === -1) continue;
+    const k = p.slice(0, idx).trim();
+    const v = p.slice(idx+1).trim();
+    kv[k] = v;
+  }
+  const hasCUser = !!kv['c_user'] || !!kv['cuser'] || !!kv['cuserid'];
+  const hasXs = !!kv['xs'] || !!kv['XS'] || !!kv['Xs'];
+  return { kv, hasCUser, hasXs, isAccount: hasCUser && hasXs };
+}
+
+function loadCookieAccountsFromFile() {
+  const out = [];
+  const cookieTxt = path.join(UPLOAD_DIR, 'cookies.txt');
   try {
-    recalcCounts();
-    fs.writeFileSync(COOKIE_INDEX_PATH, JSON.stringify(COOKIE_INDEX, null, 2));
-  } catch(e){
-    simpleLog('cookieIndex-save-err', e && e.message);
+    if (fs.existsSync(cookieTxt)) {
+      const lines = fs.readFileSync(cookieTxt, 'utf-8').split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
+      for (const l of lines) {
+        const parsed = parseLineToKv(l);
+        if (parsed && parsed.isAccount) out.push(parsed.kv);
+      }
+    } else {
+      const files = fs.readdirSync(UPLOAD_DIR).filter(f => f.endsWith('.txt'));
+      for (const f of files) {
+        if (f === 'cookies.txt') continue;
+        const content = fs.readFileSync(path.join(UPLOAD_DIR, f), 'utf-8').trim();
+        if (!content) continue;
+        const parsed = parseLineToKv(content);
+        if (parsed && parsed.isAccount) out.push(parsed.kv);
+      }
+    }
+  } catch (e) { simpleLog('loadCookieAccounts-error', e && e.message); }
+  return out;
+}
+
+// helper snippet (mask xs)
+function makeSnippetFromKv(line, kv) {
+  try {
+    if (kv && (kv.c_user || kv.cuserid || kv.cuser)) {
+      const id = (kv.c_user || kv.cuserid || kv.cuser || '').toString();
+      const shortId = id.length > 8 ? id.slice(0,6) + '...' : id;
+      let xsVal = kv.xs || kv.XS || kv.Xs || kv['xs'];
+      if (xsVal) {
+        xsVal = xsVal.toString();
+        const end = xsVal.length > 6 ? xsVal.slice(-4) : xsVal;
+        return `acct:${shortId}, xs:••••${end}`;
+      }
+      return `acct:${shortId}`;
+    }
+    if (kv && (kv.id || kv.uid)) {
+      const id = (kv.id || kv.uid).toString();
+      return `id:${ id.length > 8 ? id.slice(0,6) + '...' : id }`;
+    }
+    const crypto = require('crypto');
+    const h = crypto.createHash('sha1').update(line || '').digest('hex').slice(0,8);
+    return `line#${h}`;
+  } catch (e) {
+    if (!line) return '';
+    return line.length > 60 ? line.slice(0,40) + '...' : line;
   }
 }
 
-// ----------------- quickValidateCookie (Playwright) -----------------
+// ---------------- SSE sessions ----------------
+const sessions = new Map();
+function getSession(sid = 'default') {
+  if (!sessions.has(sid)) {
+    sessions.set(sid, {
+      clients: new Set(),
+      running: false,
+      abort: false,
+      emitter: new EventEmitter(),
+      logs: [],
+      browser: null,
+      contexts: [],
+      pages: [],
+      currentPage: null,
+      currentContext: null,
+      previewIntervals: new Map()
+    });
+  }
+  return sessions.get(sid);
+}
+function sseSend(sid, event, payload) {
+  const sess = getSession(sid);
+  const pretty = `${new Date().toLocaleTimeString()} ${event} ${JSON.stringify(payload)}`;
+  sess.logs.push(pretty);
+  if (sess.logs.length > 2000) sess.logs.shift();
+  simpleLog('SSE', sid, event, payload);
+  for (const res of sess.clients) {
+    try {
+      if (event && event !== 'message') res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch (e) {
+      // remove broken client
+      sess.clients.delete(res);
+    }
+  }
+}
+
+// attachLivePreview(page): periodically screenshot and send base64 via SSE 'screenshot' event
+function attachLivePreview(sessionId, page, opts = {}) {
+  const intervalMs = Number(opts.intervalMs || 3000);
+  const sess = getSession(sessionId);
+  let stopped = false;
+
+  const id = setInterval(async () => {
+    if (stopped) return;
+    try {
+      if (!page || (page.isClosed && page.isClosed())) {
+        clearInterval(id);
+        sess.previewIntervals.delete(id);
+        return;
+      }
+      // take screenshot; small size for speed
+      const buf = await page.screenshot({ fullPage:false }).catch(()=>null);
+      if (!buf) return;
+      // send as raw base64 string payload (server's live.html accepts raw base64 or {data:...})
+      sseSend(sessionId, 'screenshot', buf.toString('base64'));
+    } catch (e) {
+      simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
+    }
+  }, Math.max(600, intervalMs));
+
+  // store handle so we can clear later
+  sess.previewIntervals.set(id, { intervalId: id, page });
+  return id;
+}
+
+// ---------------- quickValidateCookie (light-weight) ----------------
 async function quickValidateCookie(cookies, sessionId) {
   if (!VALIDATE_COOKIES) return { status: 'parsed', reason: 'validation-disabled' };
   if (!Array.isArray(cookies) || !cookies.length) return { status:'error', reason:'no-cookies' };
 
-  let browser = null;
-  let context = null;
-  let page = null;
+  let browser = null, context = null, page = null;
   const start = Date.now();
   try {
-    browser = await launchBrowserWithFallback({ defaultViewport: { width:360, height:800 } });
+    browser = await launchBrowserWithFallback({ headless: true });
     context = await browser.newContext({
-      viewport: { width: 360, height: 800 },
+      viewport: { width:360, height:800 },
       userAgent: 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
     });
     page = await context.newPage();
 
-    const pwCookies = cookies.map(c => {
-      return {
-        name: c.name,
-        value: String(c.value),
-        domain: c.domain || '.facebook.com',
-        path: c.path || '/',
-        httpOnly: !!c.httpOnly,
-        secure: !!c.secure,
-        sameSite: c.sameSite || 'Lax'
-      };
-    });
+    const pwCookies = cookies.map(c => ({
+      name: c.name,
+      value: String(c.value),
+      domain: c.domain || '.facebook.com',
+      path: c.path || '/',
+      httpOnly: !!c.httpOnly,
+      secure: !!c.secure,
+      sameSite: c.sameSite || 'Lax'
+    }));
 
     await page.goto('https://m.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
-    try {
-      await context.addCookies(pwCookies);
-    } catch (e) {
+    try { await context.addCookies(pwCookies); } catch (e) {
       sseSend(sessionId, 'log', { msg: 'quickValidate: context.addCookies failed', error: e && e.message });
       return { status: 'error', reason: 'cookie-set-failed' };
     }
-
     await page.goto('https://m.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
     await page.waitForTimeout(1000);
 
-    let curUrl = null, html = '';
-    try { curUrl = page.url(); } catch (e) { curUrl = null; }
+    let curUrl = page.url ? page.url() : null;
+    let html = '';
     try { html = await page.content(); } catch (e) { html = ''; }
 
-    const lower = String(html).toLowerCase();
+    const lower = String(html || '').toLowerCase();
     const loginHints = ['log in to see posts','log in to see','log in','create new account','password','sign up','please log in'];
-    let flaggedLogin = false;
-    for (const h of loginHints) { if (lower.includes(h)) { flaggedLogin = true; break; } }
-    const urlLogin = curUrl && (/\/login|\/checkpoint|\/home\.php/.test(curUrl));
-
-    if (flaggedLogin || urlLogin) {
+    for (const h of loginHints) if (lower.includes(h)) {
       sseSend(sessionId, 'log', { msg: 'quickValidate result: invalid (login detected)', url: curUrl });
       return { status: 'invalid', reason: 'login-prompt-or-redirect', url: curUrl };
     }
@@ -202,12 +311,349 @@ async function quickValidateCookie(cookies, sessionId) {
     try { if (page) await page.close(); } catch(_) {}
     try { if (context) await context.close(); } catch(_) {}
     try { if (browser) await browser.close(); } catch(_) {}
-    const took = Date.now() - start;
-    sseSend(sessionId, 'log', { msg: 'quickValidate took ms', ms: took });
+    sseSend(sessionId, 'log', { msg: 'quickValidate took ms', ms: Date.now() - start });
   }
 }
 
-// multer storage
+// ----------------- robust runFlowOnPage (retries + postCheck) -----------------
+async function runFlowOnPage(page, flowSteps, opts = {}) {
+  const { sessionId='default', perActionDelay=1100, actionTimeout=15000, maxAttempts=3 } = opts;
+  function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+  async function singleClickAttempt({ type, value, timeout }) {
+    // uses Playwright locator APIs
+    try {
+      if (type === 'css') {
+        const loc = page.locator(value).first();
+        await loc.waitFor({ timeout });
+        await loc.click({ timeout, force: true });
+        return true;
+      }
+      if (type === 'xpath') {
+        const loc = page.locator(`xpath=${value}`).first();
+        await loc.waitFor({ timeout });
+        await loc.click({ timeout, force: true });
+        return true;
+      }
+      if (type === 'text') {
+        try {
+          const byText = page.getByText(value, { exact: false }).first();
+          await byText.waitFor({ timeout });
+          await byText.click({ timeout, force: true });
+          return true;
+        } catch (_) {
+          const lower = value.toLowerCase().replace(/'/g, "\\'");
+          const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+          const loc2 = page.locator(`xpath=${xp}`).first();
+          await loc2.waitFor({ timeout });
+          await loc2.click({ timeout, force: true });
+          return true;
+        }
+      }
+      // autodetect
+      if (!type) {
+        try {
+          const loc = page.locator(value).first();
+          await loc.waitFor({ timeout });
+          await loc.click({ timeout, force: true });
+          return true;
+        } catch (_) {}
+        try {
+          const loc = page.locator(`xpath=${value}`).first();
+          await loc.waitFor({ timeout });
+          await loc.click({ timeout, force: true });
+          return true;
+        } catch (_) {}
+        const lower = String(value).toLowerCase().replace(/'/g, "\\'");
+        const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        const loc2 = page.locator(`xpath=${xp2}`).first();
+        await loc2.waitFor({ timeout });
+        await loc2.click({ timeout, force: true });
+        return true;
+      }
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  async function trySelector(selRaw, config = {}) {
+    const attempts = config.attempts || maxAttempts;
+    const timeout = config.timeout || Math.min(actionTimeout, 7000);
+    const recovery = Array.isArray(config.recoverySelectors) ? config.recoverySelectors : [];
+    let lastError = null;
+
+    // parse type
+    let type = null, value = selRaw;
+    if (/^css:/.test(selRaw)) { type = 'css'; value = selRaw.replace(/^css:/,'').trim(); }
+    else if (/^xpath:/.test(selRaw)) { type = 'xpath'; value = selRaw.replace(/^xpath:/,'').trim(); }
+    else if (/^text:/.test(selRaw)) { type = 'text'; value = selRaw.replace(/^text:/,'').trim(); }
+    else { type = null; value = selRaw; }
+
+    for (let i=0;i<attempts;i++){
+      try {
+        // attempt to scroll into view
+        try {
+          if (type === 'css') {
+            const loc = page.locator(value).first();
+            await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
+          } else {
+            const loc = page.locator(type === 'xpath' ? `xpath=${value}` : value).first();
+            await loc.scrollIntoViewIfNeeded({ timeout: Math.min(2000, timeout) }).catch(()=>{});
+          }
+        } catch (_) {}
+        await singleClickAttempt({ type, value, timeout });
+        return { ok:true, attempt:i+1 };
+      } catch (e) {
+        lastError = e;
+        await sleep(300 + Math.floor(Math.random()*300));
+      }
+    }
+
+    // recovery attempts (if provided)
+    for (const r of recovery) {
+      try {
+        try { await singleClickAttempt({ type: null, value: r, timeout: Math.min(3000, timeout) }); } catch(_) {}
+        try {
+          await sleep(250);
+          await singleClickAttempt({ type, value, timeout });
+          return { ok:true, recovered:true };
+        } catch (e2) { lastError = e2; }
+      } catch(_) {}
+    }
+
+    return { ok:false, error: lastError };
+  }
+
+  async function postCheckOk(check) {
+    if (!check) return true;
+    try {
+      if (/^css:/.test(check)) {
+        await page.waitForSelector(check.replace(/^css:/,''), { timeout: 3000 });
+        return true;
+      } else if (/^xpath:/.test(check)) {
+        await page.waitForSelector(`xpath=${check.replace(/^xpath:/,'')}`, { timeout: 3000 });
+        return true;
+      } else if (/^text:/.test(check)) {
+        const txt = check.replace(/^text:/,'').trim();
+        const lower = txt.toLowerCase().replace(/'/g,"\\'");
+        const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        await page.waitForSelector(`xpath=${xp}`, { timeout: 3000 });
+        return true;
+      } else {
+        try { await page.waitForSelector(check, { timeout: 2500 }); return true; } catch(_) {}
+        const lower = String(check).toLowerCase().replace(/'/g,"\\'");
+        const xp2 = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
+        await page.waitForSelector(`xpath=${xp2}`, { timeout: 2500 });
+        return true;
+      }
+    } catch (e) { return false; }
+  }
+
+  // main
+  for (const step of flowSteps) {
+    if (getSession(sessionId).abort) throw new Error('ABORTED');
+    const label = step.label || step.selector || step.text || 'step';
+    sseSend(sessionId, 'log', { step: label });
+
+    const selectors = Array.isArray(step.selectors) ? step.selectors : (step.selector ? [step.selector] : []);
+    const attemptsForStep = step.attempts || maxAttempts;
+    const recoverySelectors = step.recoverySelectors || [];
+    const mandatory = !!step.mandatory;
+    const postCheck = step.postCheck || null;
+
+    let stepOk = false;
+    let lastDetail = null;
+
+    for (const sel of selectors) {
+      const res = await trySelector(sel, { attempts: attemptsForStep, timeout: Math.min(actionTimeout, 8000), recoverySelectors });
+      if (res.ok) { stepOk = true; lastDetail = res; break; }
+      lastDetail = res.error || res;
+    }
+
+    if (stepOk && postCheck) {
+      const ok = await postCheckOk(postCheck);
+      if (!ok) {
+        let pcOk = false;
+        for (let r=0;r<2 && !pcOk;r++) {
+          await sleep(300);
+          pcOk = await postCheckOk(postCheck);
+        }
+        if (!pcOk) {
+          stepOk = false;
+          lastDetail = { postCheckFailed: true };
+        }
+      }
+    }
+
+    if (!stepOk) {
+      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found-or-postcheck-failed', detail: (lastDetail && lastDetail.error) ? (lastDetail.error.message || String(lastDetail.error)) : String(lastDetail) });
+      if (mandatory) throw new Error(`Mandatory step failed: ${label}`);
+    } else {
+      sseSend(sessionId, 'info', { step: label, ok: true, detail: lastDetail });
+    }
+
+    await sleep(Number(step.waitMs || perActionDelay) + Math.floor(Math.random()*350));
+  }
+}
+
+// ---------------- main runner: reportRunner ----------------
+async function reportRunner(sessionId, opts = {}) {
+  const sess = getSession(sessionId);
+  try {
+    sess.running = true; sess.abort = false;
+    let cookieAccounts = loadCookieAccountsFromFile();
+    const MAX_ACCOUNTS = Math.max(1, parseInt(process.env.MAX_ACCOUNTS || '200', 10));
+    if (cookieAccounts.length > MAX_ACCOUNTS) cookieAccounts = cookieAccounts.slice(0, MAX_ACCOUNTS);
+    if (!cookieAccounts.length) { sseSend(sessionId,'error',{msg:'No cookie accounts found'}); sess.running=false; return; }
+
+    const target = String(opts.targetUrl || opts.target || '').trim();
+    if (!target) { sseSend(sessionId,'error',{msg:'targetUrl required'}); sess.running=false; return; }
+
+    const kind = (opts.setType || opts.type || 'profile').toLowerCase();
+    const sets = kind === 'profile' ? flows.profileSets || [] : kind === 'page' ? flows.pageSets || [] : flows.postSets || [];
+    if (!sets.length) { sseSend(sessionId,'error',{msg:'No flow sets for '+kind}); sess.running=false; return; }
+    const found = opts.setId ? sets.find(s => s.id===opts.setId || s.name===opts.setId) : sets[0];
+    if (!found) { sseSend(sessionId,'error',{msg:'Requested set not found'}); sess.running=false; return; }
+
+    // local helper to launch the browser once and reuse; restart periodically
+    async function launchBrowser() { return await launchBrowserWithFallback({ headless: !!opts.headless, args: opts.args || [], defaultViewport: opts.defaultViewport }); }
+
+    let browser = await launchBrowser();
+    sess.browser = browser;
+    let sinceRestart = 0;
+    const RESTART_AFTER = Math.max(5, parseInt(process.env.RESTART_AFTER || '25',10));
+    let accountIndex = 0;
+
+    for (const cookies of cookieAccounts) {
+      if (sess.abort) break;
+      accountIndex++;
+
+      // normalize cookie input -> array of {name,value,...}
+      let accountCookies = [];
+      if (Array.isArray(cookies)) accountCookies = cookies.flat(Infinity).filter(Boolean);
+      else if (cookies && typeof cookies === 'object') {
+        if (cookies.name && cookies.value) accountCookies = [cookies];
+        else accountCookies = Object.entries(cookies).map(([k,v]) => ({ name:k, value:String(v), domain:'.facebook.com', path:'/', httpOnly:false, secure:true }));
+      } else {
+        sseSend(sessionId, 'warn', { msg: 'Skipping malformed cookie entry', index: accountIndex });
+        continue;
+      }
+      accountCookies = accountCookies.filter(c => c && c.name && (c.value !== undefined));
+      const accId = accountCookies.find(c => c.name === 'c_user')?.value || `acct_${accountIndex}`;
+      sseSend(sessionId, 'info', { msg:`Account ${accountIndex}`, account: accId });
+
+      let page = null, context = null;
+      try {
+        if (sinceRestart >= RESTART_AFTER) {
+          try { await browser.close(); } catch(e){ simpleLog('browser-close-error', e && e.message); }
+          browser = await launchBrowser();
+          sess.browser = browser;
+          sinceRestart = 0;
+          sseSend(sessionId,'info',{msg:'Browser restarted to avoid memory leak'});
+        }
+
+        context = await browser.newContext({
+          viewport: opts.defaultViewport || { width:390, height:844 },
+          userAgent: 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
+        });
+        page = await context.newPage();
+
+        sess.contexts.push(context);
+        sess.pages.push(page);
+        sess.currentContext = context;
+        sess.currentPage = page;
+
+        simpleLog('page-created-for-account', accId);
+        sseSend(sessionId, 'info', { msg: 'page-created', account: accId });
+
+        const pwCookies = accountCookies.map(c => ({
+          name: c.name,
+          value: String(c.value),
+          domain: c.domain || '.facebook.com',
+          path: c.path || '/',
+          httpOnly: !!c.httpOnly,
+          secure: !!c.secure,
+          sameSite: c.sameSite || 'Lax'
+        }));
+
+        // set cookies and navigate
+        await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
+        if (pwCookies.length) {
+          try {
+            await context.addCookies(pwCookies);
+          } catch (e) {
+            sseSend(sessionId, 'warn', { msg: 'context.addCookies failed', account: accId, error: e && e.message });
+          }
+        } else {
+          sseSend(sessionId, 'warn', { msg: 'No cookies to set for account', account: accId });
+        }
+
+        // attach live preview (3s default) for this page
+        try {
+          attachLivePreview(sessionId, page, { intervalMs: opts.previewIntervalMs || 3000 });
+        } catch (e) { simpleLog('attachLivePreview error', e && e.message); }
+
+        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
+        try { const curUrl = await page.url(); simpleLog('Page navigated', { account: accId, url: curUrl }); sseSend(sessionId,'info',{msg:'page-url',url:curUrl}); } catch(e){}
+
+        await page.waitForTimeout(1200 + Math.floor(Math.random()*800));
+
+        const ACCOUNT_TIMEOUT_MS = Math.max(30_000, parseInt(process.env.ACCOUNT_TIMEOUT_MS || '90000',10));
+        await Promise.race([
+          runFlowOnPage(page, found.steps, { sessionId, perActionDelay: opts.perActionDelay || 1200, actionTimeout: opts.actionTimeout || 12000 }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Account timeout')), ACCOUNT_TIMEOUT_MS))
+        ]);
+
+        sseSend(sessionId, 'success', { account: accId, msg: 'Flow completed' });
+
+        try { await page.close(); } catch(e){}
+        try { await context.close(); } catch(e){}
+        sess.pages = sess.pages.filter(p => p !== page);
+        sess.contexts = sess.contexts.filter(c => c !== context);
+        sess.currentPage = null;
+        sess.currentContext = null;
+      } catch (err) {
+        sseSend(sessionId,'error',{account: accId, error: err && err.message ? err.message : String(err)});
+        try { if (page) await page.close(); } catch(e){}
+        try { if (context) await context.close(); } catch(e){}
+        sess.pages = sess.pages.filter(p => p !== page);
+        sess.contexts = sess.contexts.filter(c => c !== context);
+        sess.currentPage = null;
+        sess.currentContext = null;
+      }
+
+      sinceRestart++;
+      await new Promise(r => setTimeout(r, (opts.gapMs || 2500) + Math.floor(Math.random()*2000)));
+    } // end accounts loop
+
+    // cleanup
+    try {
+      if (browser) {
+        try { await browser.close(); } catch (e) { simpleLog('browser-close-final', e && e.message); }
+      }
+      sess.browser = null;
+      sess.contexts = [];
+      sess.pages = [];
+      sess.currentPage = null;
+      sess.currentContext = null;
+      sseSend(sessionId, 'done', { msg: 'Runner finished' });
+    } catch (e) {
+      sseSend(sessionId, 'fatal', { msg: e && e.message ? e.message : String(e) });
+      simpleLog('reportRunner-final-error', e && e.stack ? e.stack : String(e));
+    } finally {
+      sess.running = false;
+      sess.abort = false;
+    }
+  } catch (e) {
+    sseSend(sessionId, 'fatal', { msg: e && e.message ? e.message : String(e) });
+    simpleLog('reportRunner-fatal', e && e.stack ? e.stack : String(e));
+    const s = getSession(sessionId);
+    s.running = false;
+    s.abort = false;
+  }
+}
+
+// ---------- multer for uploads ----------
 const sanitize = (name) => String(name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -239,420 +685,36 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// SSE sessions
-const sessions = new Map();
-function getSession(sid = 'default') {
-  if (!sessions.has(sid)) {
-    sessions.set(sid, {
-      clients: new Set(),
-      running: false,
-      abort: false,
-      emitter: new EventEmitter(),
-      logs: [],
-      browser: null,
-      contexts: [],
-      pages: [],
-      currentPage: null,
-      currentContext: null,
-      previewIntervals: new Map()
-    });
-  }
-  return sessions.get(sid);
-}
+// ---------- API endpoints ----------
 
-// ======= sseSend (improved: don't dump huge blob into logs) =======
-function sseSend(sid, event, payload) {
+// SSE events
+app.get('/events', requireAdmin, (req, res) => {
+  const sid = req.query.sessionId || 'default';
   const sess = getSession(sid);
 
-  // If payload is a very large string (e.g. base64 of screenshot), avoid storing whole string in logs.
-  let prettyPayload = payload;
-  try {
-    if (typeof payload === 'string' && payload.length > 2000) {
-      prettyPayload = { _note: 'large-string', length: payload.length };
-    } else if (payload && typeof payload === 'object' && payload._noLogFull) {
-      // special marker to avoid logging heavy fields
-      const copy = Object.assign({}, payload);
-      delete copy._heavy; // remove heavy passthrough
-      prettyPayload = copy;
-    }
-  } catch (e) { prettyPayload = { _err: 'pretty-fail' }; }
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  res.flushHeaders();
 
-  const pretty = `${new Date().toLocaleTimeString()} ${event} ${JSON.stringify(prettyPayload)}`;
-  sess.logs.push(pretty);
-  if (sess.logs.length > 2000) sess.logs.shift();
+  res.write(`event: ready\ndata: ${JSON.stringify({ msg: 'SSE connected', sessionId: sid })}\n\n`);
+  sess.clients.add(res);
 
-  // short log to file/console (not dumping huge blobs)
-  simpleLog('SSE', sid, event, prettyPayload);
+  // keepalive comment every 15s
+  const ka = setInterval(() => {
+    try { res.write(':\n\n'); } catch (e) {}
+  }, 15000);
 
-  // send full payload to connected SSE clients (UI) if necessary
-  for (const res of sess.clients) {
-    try {
-      if (event && event !== 'message') res.write(`event: ${event}\n`);
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    } catch (e) {
-      sess.clients.delete(res);
-    }
-  }
-}
+  req.on('close', () => {
+    clearInterval(ka);
+    sess.clients.delete(res);
+  });
+});
 
-// attach live screenshot streaming for a page; returns intervalId
-function attachLivePreview(sessionId, page, opts = {}) {
-  const intervalMs = opts.intervalMs || 3000; // every 3s by default
-  const sess = getSession(sessionId);
-
-  // avoid duplicate attach
-  if (!sess || !page) return null;
-  if (sess.previewIntervals && sess.previewIntervals.has(page)) return sess.previewIntervals.get(page);
-
-  const id = setInterval(async () => {
-    try {
-      if (!page || page.isClosed && page.isClosed()) {
-        clearInterval(id);
-        if (sess && sess.previewIntervals) sess.previewIntervals.delete(page);
-        return;
-      }
-      const buf = await page.screenshot({ fullPage: false }).catch(()=>null);
-      if (buf) {
-        // send as base64 for UI display
-        const b64 = buf.toString('base64');
-        // send full b64 to UI but mark to avoid giant log
-        sseSend(sessionId, 'screenshot', { _noLogFull: true, _heavy: b64, length: b64.length });
-        // For UI convenience: also send a short "preview" (first 200 chars) - optionally used by clients
-        sseSend(sessionId, 'screenshot-meta', { length: b64.length, timestamp: Date.now() });
-      }
-    } catch (e) {
-      simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
-    }
-  }, intervalMs);
-
-  try { if (sess && sess.previewIntervals) sess.previewIntervals.set(page, id); } catch(_) {}
-  return id;
-}
-
-// detach preview interval for page
-function detachLivePreview(sessionId, page) {
-  const sess = getSession(sessionId);
-  if (!sess || !sess.previewIntervals) return;
-  const id = sess.previewIntervals.get(page);
-  if (id) clearInterval(id);
-  sess.previewIntervals.delete(page);
-}
-
-// cookie parser helper: returns kv map OR null if not account
-function parseLineToKv(line) {
-  const parts = line.split(';').map(p => p.trim()).filter(Boolean);
-  const kv = {};
-  for (const p of parts) {
-    const idx = p.indexOf('=');
-    if (idx === -1) continue;
-    const k = p.slice(0, idx).trim();
-    const v = p.slice(idx+1).trim();
-    kv[k] = v;
-  }
-  const hasCUser = !!kv['c_user'];
-  const hasXs = !!kv['xs'];
-  return { kv, hasCUser, hasXs, isAccount: hasCUser && hasXs };
-}
-
-function loadCookieAccountsFromFile() {
-  const out = [];
-  const cookieTxt = path.join(UPLOAD_DIR, 'cookies.txt');
-  try {
-    if (fs.existsSync(cookieTxt)) {
-      const lines = fs.readFileSync(cookieTxt, 'utf-8').split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
-      for (const l of lines) {
-        const parsed = parseLineToKv(l);
-        if (parsed && parsed.isAccount) out.push(parsed.kv);
-      }
-    } else {
-      const files = fs.readdirSync(UPLOAD_DIR).filter(f => f.endsWith('.txt'));
-      for (const f of files) {
-        if (f === 'cookies.txt') continue;
-        const content = fs.readFileSync(path.join(UPLOAD_DIR, f), 'utf-8').trim();
-        if (!content) continue;
-        const parsed = parseLineToKv(content);
-        if (parsed && parsed.isAccount) out.push(parsed.kv);
-      }
-    }
-  } catch (e) { simpleLog('loadCookieAccounts-error', e && e.message); }
-  return out;
-}
-
-// click helpers (simple)
-async function tryClickCss(page, sel, timeout = 3000) {
-  try {
-    await page.waitForSelector(sel, { timeout });
-    await page.click(sel, { force: true, timeout });
-    return true;
-  } catch (e) { return false; }
-}
-async function tryClickXpath(page, sel, timeout = 3000) {
-  try {
-    const el = await page.waitForXPath(sel, { timeout });
-    if (!el) throw new Error('no-el-xpath');
-    await el.click({ timeout });
-    return true;
-  } catch (e) { return false; }
-}
-
-// ===== Playwright-robust runFlowOnPage (kept flexible) =====
-async function runFlowOnPage(page, flowSteps, opts = {}) {
-  // For brevity: include your robust click/selector logic here.
-  // If you already have a runFlowOnPage implemented, use that.
-  // This example will attempt simple clicks using provided selectors array.
-  const { sessionId='default', perActionDelay=1100, actionTimeout=12000, maxAttempts=3 } = opts;
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  for (const step of flowSteps) {
-    if (getSession(sessionId).abort) throw new Error('ABORTED');
-    const label = step.label || step.selector || step.text || 'step';
-    sseSend(sessionId, 'log', { step: label });
-
-    const sels = Array.isArray(step.selectors) ? step.selectors.slice() : (step.selector ? [step.selector] : []);
-    let success = false;
-
-    for (const rawSel of sels) {
-      if (!rawSel) continue;
-      const sel = String(rawSel).trim();
-      try {
-        if (/^css:/.test(sel)) {
-          const css = sel.replace(/^css:/,'');
-          await page.waitForSelector(css, { timeout: Math.min(actionTimeout,5000) });
-          await page.click(css, { timeout: Math.min(actionTimeout,5000), force: true });
-          success = true;
-        } else if (/^xpath:/.test(sel)) {
-          const xp = sel.replace(/^xpath:/,'');
-          const els = await page.$x(xp);
-          if (els && els[0]) { await els[0].click(); success = true; }
-        } else if (/^text:/.test(sel)) {
-          const txt = sel.replace(/^text:/,'').trim();
-          try {
-            const byText = page.getByText(txt, { exact: false }).first();
-            await byText.waitFor({ timeout: Math.min(actionTimeout,5000) });
-            await byText.click({ timeout: Math.min(actionTimeout,5000), force: true });
-            success = true;
-          } catch (_) {
-            const lower = txt.toLowerCase().replace(/'/g,"\\'");
-            const xp = `//*[contains(translate(normalize-space(string(.)),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lower}')]`;
-            const els = await page.$x(xp);
-            if (els && els[0]) { await els[0].click(); success = true; }
-          }
-        } else {
-          // no prefix: try css then xpath then text
-          try { await page.waitForSelector(sel, { timeout: Math.min(actionTimeout,3000) }); await page.click(sel, { timeout: Math.min(actionTimeout,3000), force: true }); success = true; } catch(_) {}
-          if (!success) {
-            try { const els = await page.$x(sel); if (els && els[0]) { await els[0].click(); success = true; } } catch(_) {}
-          }
-        }
-      } catch (e) {
-        success = false;
-      }
-      if (success) break;
-    }
-
-    if (!success) {
-      sseSend(sessionId, 'warn', { step: label, error: 'selector-not-found-or-postcheck-failed' });
-      // non-mandatory steps continue, mandatory would throw if desired
-    } else {
-      sseSend(sessionId, 'log', { step: label, ok: true });
-    }
-
-    await sleep(perActionDelay + Math.floor(Math.random()*300));
-  }
-}
-
-// helper to make a compact snippet (non-sensitive)
-function makeSnippetFromKv(line, kv) {
-  try {
-    if (kv && (kv.c_user || kv.cuserid || kv.cuser)) {
-      const id = (kv.c_user || kv.cuserid || kv.cuser || '').toString();
-      const shortId = id.length > 8 ? id.slice(0, 6) + '...' : id;
-      let xsVal = kv.xs || kv.XS || kv.Xs || kv['xs'];
-      if (xsVal) {
-        xsVal = xsVal.toString();
-        const end = xsVal.length > 6 ? xsVal.slice(-4) : xsVal;
-        return `acct:${shortId}, xs:••••${end}`;
-      }
-      return `acct:${shortId}`;
-    }
-
-    if (kv && (kv.id || kv.uid)) {
-      const id = (kv.id || kv.uid).toString();
-      return `id:${ id.length > 8 ? id.slice(0,6) + '...' : id }`;
-    }
-
-    const crypto = require('crypto');
-    const h = crypto.createHash('sha1').update(line || '').digest('hex').slice(0,8);
-    return `line#${h}`;
-  } catch (e) {
-    if (!line) return '';
-    return line.length > 60 ? line.slice(0, 40) + '...' : line;
-  }
-}
-
-// --- main runner ---
-async function reportRunner(sessionId, opts = {}) {
-  const sess = getSession(sessionId);
-  try {
-    sess.running = true; sess.abort = false;
-
-    let cookieAccounts = loadCookieAccountsFromFile();
-    const MAX_ACCOUNTS = Math.max(1, parseInt(process.env.MAX_ACCOUNTS || '200', 10));
-    if (cookieAccounts.length > MAX_ACCOUNTS) cookieAccounts = cookieAccounts.slice(0, MAX_ACCOUNTS);
-    if (!cookieAccounts.length) { sseSend(sessionId,'error',{msg:'No cookie accounts found'}); sess.running=false; return; }
-
-    const target = String(opts.targetUrl || opts.target || '').trim();
-    if (!target) { sseSend(sessionId,'error',{msg:'targetUrl required'}); sess.running=false; return; }
-
-    const kind = (opts.setType || opts.type || 'profile').toLowerCase();
-    const sets = kind === 'profile' ? flows.profileSets || [] : kind === 'page' ? flows.pageSets || [] : flows.postSets || [];
-    if (!sets.length) { sseSend(sessionId,'error',{msg:'No flow sets for '+kind}); sess.running=false; return; }
-    const found = opts.setId ? sets.find(s => s.id===opts.setId || s.name===opts.setId) : sets[0];
-    if (!found) { sseSend(sessionId,'error',{msg:'Requested set not found'}); sess.running=false; return; }
-
-    async function launchBrowser() {
-      // Force headless on server environments (Render/CI)
-      return await launchBrowserWithFallback({ headless: true, args: opts.args || [], defaultViewport: opts.defaultViewport });
-    }
-
-    let browser = await launchBrowser();
-    sess.browser = browser;
-    let sinceRestart = 0;
-    const RESTART_AFTER = Math.max(5, parseInt(process.env.RESTART_AFTER || '25',10));
-
-    let accountIndex = 0;
-    for (const cookies of cookieAccounts) {
-      if (sess.abort) break;
-      accountIndex++;
-
-      // Normalize cookies
-      let accountCookies = [];
-      if (Array.isArray(cookies)) accountCookies = cookies.flat(Infinity).filter(Boolean);
-      else if (cookies && typeof cookies === 'object') {
-        if (cookies.name && cookies.value) accountCookies = [cookies];
-        else accountCookies = Object.entries(cookies).map(([k,v]) => ({ name:k, value:String(v), domain:'.facebook.com', path:'/', httpOnly:false, secure:true }));
-      } else {
-        sseSend(sessionId, 'warn', { msg: 'Skipping malformed cookie entry', index: accountIndex });
-        continue;
-      }
-      accountCookies = accountCookies.filter(c => c && c.name && (c.value !== undefined));
-
-      const accId = accountCookies.find(c => c.name === 'c_user')?.value || `acct_${accountIndex}`;
-      sseSend(sessionId, 'info', { msg:`Account ${accountIndex}`, account: accId });
-
-      let page = null;
-      let context = null;
-      try {
-        if (sinceRestart >= RESTART_AFTER) {
-          try { await browser.close(); } catch(e){ simpleLog('browser-close-error', e && e.message); }
-          browser = await launchBrowser();
-          sess.browser = browser;
-          sinceRestart = 0;
-          sseSend(sessionId,'info',{msg:'Browser restarted to avoid memory leak'});
-        }
-
-        context = await browser.newContext({
-          viewport: opts.defaultViewport || { width:390, height:844 },
-          userAgent: 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
-        });
-        page = await context.newPage();
-
-        // attach preview
-        try { attachLivePreview(sessionId, page, { intervalMs: 3000 }); } catch(_) {}
-
-        sess.contexts.push(context);
-        sess.pages.push(page);
-        sess.currentContext = context;
-        sess.currentPage = page;
-
-        simpleLog('page-created-for-account', accId);
-
-        const pwCookies = accountCookies.map(c => ({
-          name: c.name,
-          value: String(c.value),
-          domain: c.domain || '.facebook.com',
-          path: c.path || '/',
-          httpOnly: !!c.httpOnly,
-          secure: !!c.secure,
-          sameSite: c.sameSite || 'Lax'
-        }));
-
-        await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(()=>{});
-        if (pwCookies.length) {
-          try {
-            await context.addCookies(pwCookies);
-          } catch (e) {
-            sseSend(sessionId, 'warn', { msg: 'context.addCookies failed', account: accId, error: e && e.message });
-          }
-        } else {
-          sseSend(sessionId, 'warn', { msg: 'No cookies to set for account', account: accId });
-        }
-
-        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(()=>{});
-        try { const curUrl = await page.url(); simpleLog('Page navigated', { account: accId, url: curUrl }); sseSend(sessionId,'info',{msg:'page-url',url:curUrl}); } catch(e){}
-
-        await page.waitForTimeout(1200 + Math.floor(Math.random()*800));
-
-        const ACCOUNT_TIMEOUT_MS = Math.max(30_000, parseInt(process.env.ACCOUNT_TIMEOUT_MS || '90000',10));
-        await Promise.race([
-          runFlowOnPage(page, found.steps, { sessionId, perActionDelay: opts.perActionDelay || 1200, actionTimeout: opts.actionTimeout || 12000 }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Account timeout')), ACCOUNT_TIMEOUT_MS))
-        ]);
-
-        sseSend(sessionId, 'success', { account: accId, msg: 'Flow completed' });
-
-        // cleanup: detach preview first
-        try { detachLivePreview(sessionId, page); } catch(_) {}
-        try { await page.close(); } catch(e){}
-        try { await context.close(); } catch(e){}
-        sess.pages = sess.pages.filter(p => p !== page);
-        sess.contexts = sess.contexts.filter(c => c !== context);
-        sess.currentPage = null;
-        sess.currentContext = null;
-      } catch (err) {
-        sseSend(sessionId,'error',{account: accId, error: err && err.message ? err.message : String(err)});
-        try { if (page) { detachLivePreview(sessionId, page); await page.close(); } } catch(e){}
-        try { if (context) await context.close(); } catch(e){}
-        sess.pages = sess.pages.filter(p => p !== page);
-        sess.contexts = sess.contexts.filter(c => c !== context);
-        sess.currentPage = null;
-        sess.currentContext = null;
-      }
-
-      sinceRestart++;
-      await new Promise(r => setTimeout(r, (opts.gapMs || 2500) + Math.floor(Math.random()*2000)));
-    }
-
-    // loop end cleanup
-    try {
-      if (browser) {
-        try { await browser.close(); } catch (e) { simpleLog('browser-close-final', e && e.message); }
-      }
-      sess.browser = null;
-      sess.contexts = [];
-      sess.pages = [];
-      sess.currentPage = null;
-      sess.currentContext = null;
-      sseSend(sessionId, 'done', { msg: 'Runner finished' });
-    } catch (e) {
-      sseSend(sessionId, 'fatal', { msg: e && e.message ? e.message : String(e) });
-      simpleLog('reportRunner-final-error', e && e.stack ? e.stack : String(e));
-    } finally {
-      sess.running = false;
-      sess.abort = false;
-    }
-  } catch (e) {
-    sseSend(sessionId, 'fatal', { msg: e && e.message ? e.message : String(e) });
-    simpleLog('reportRunner-fatal', e && e.stack ? e.stack : String(e));
-    const s = getSession(sessionId);
-    s.running = false;
-    s.abort = false;
-  }
-}
-
-// --- API & debug endpoints ---
-
-// debug screenshot (session-scoped)
+// debug screenshot for current page (admin)
 app.get('/debug-screenshot', requireAdmin, async (req, res) => {
   const sessionId = req.query.sessionId || 'default';
   const sess = getSession(sessionId);
@@ -682,36 +744,10 @@ app.get('/debug-html', requireAdmin, async (req, res) => {
   }
 });
 
-// flows
+// flows list
 app.get('/flows', (req, res) => res.json(flows));
 
-// SSE
-app.get('/events', requireAdmin, (req, res) => {
-  const sid = req.query.sessionId || 'default';
-  const sess = getSession(sid);
-
-  res.set({
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no'
-  });
-  res.flushHeaders();
-
-  res.write(`event: ready\ndata: ${JSON.stringify({ msg: 'SSE connected', sessionId: sid })}\n\n`);
-  sess.clients.add(res);
-
-  const ka = setInterval(() => {
-    try { res.write(':\n\n'); } catch (e) { /* ignore */ }
-  }, 15000);
-
-  req.on('close', () => {
-    clearInterval(ka);
-    sess.clients.delete(res);
-  });
-});
-
-// --- Upload cookies (multipart OR json text) ---
+// upload cookies (multipart or text)
 let uploadLock = false;
 app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, res) => {
   const sessionId = req.query.sessionId || req.body.sessionId || 'default';
@@ -719,12 +755,11 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
   uploadLock = true;
 
   try {
-    // read raw content from uploaded file OR body.text
     let raw = '';
     if (req.file) {
       const target = path.join(UPLOAD_DIR, 'cookies.txt');
       await fsp.copyFile(req.file.path, target);
-      try { await fsp.unlink(req.file.path); } catch(_) {}
+      try { await fsp.unlink(req.file.path); } catch (_) {}
       raw = await fsp.readFile(target, 'utf8');
       sseSend(sessionId, 'log', { msg: 'cookies file saved', file: 'uploads/cookies.txt' });
     } else if (req.body && req.body.text) {
@@ -737,7 +772,6 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
       return res.status(400).json({ ok:false, message:'No file or text' });
     }
 
-    // split into non-empty lines
     const lines = raw.split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
     if (!lines.length) {
       sseSend(sessionId, 'warn', { msg: 'No cookie lines found in file' });
@@ -747,30 +781,22 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
 
     // reset index
     COOKIE_INDEX.cookies = [];
-    COOKIE_INDEX.counts = { total:0, live:0, invalid:0, parsed:0, error:0 };
     saveCookieIndex();
 
     let parsedCount = 0;
-
-    // iterate lines
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       try {
         const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
-        const snippet = (typeof makeSnippetFromKv === 'function') ? makeSnippetFromKv(line, kv) : (line.length > 60 ? line.slice(0,40) + '...' : line);
+        const snippet = makeSnippetFromKv(line, kv);
         const summary = { lineIndex: i + 1, snippet, hasCUser, hasXs, isAccount };
 
         if (!isAccount) {
           sseSend(sessionId, 'cookieStatus', { status: 'invalid', reason: 'missing c_user/xs', ...summary });
-          const entryObj = {
-            lineIndex: i + 1,
-            originalLine: line,
-            snippet,
-            hasCUser, hasXs, isAccount,
-            parsedAt: (new Date()).toISOString(),
+          COOKIE_INDEX.cookies.push({
+            lineIndex: i + 1, originalLine: line, snippet, hasCUser, hasXs, isAccount, parsedAt: (new Date()).toISOString(),
             validateResult: { status: 'invalid', reason: 'missing c_user/xs' }
-          };
-          COOKIE_INDEX.cookies.push(entryObj);
+          });
           saveCookieIndex();
           continue;
         }
@@ -778,11 +804,10 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
         parsedCount++;
         sseSend(sessionId, 'cookieStatus', { status: 'parsed', ...summary });
 
-        // build cookie objects for Playwright
         const cookieObjects = [];
-        for (const [k, v] of Object.entries(kv || {})) {
+        for (const [k,v] of Object.entries(kv || {})) {
           if (k && v !== undefined) {
-            cookieObjects.push({ name: k, value: String(v), domain: '.facebook.com', path: '/', httpOnly: false, secure: true });
+            cookieObjects.push({ name:k, value:String(v), domain:'.facebook.com', path:'/', httpOnly:false, secure:true });
           }
         }
 
@@ -790,51 +815,26 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
 
         let result = { status: 'parsed', reason: 'validation-skipped' };
         if (VALIDATE_COOKIES) {
-          try {
-            result = await quickValidateCookie(cookieObjects, sessionId);
-          } catch (err) {
-            result = { status: 'error', reason: err && err.message ? err.message : String(err) };
-          }
-        } else {
-          result = { status: 'parsed', reason: 'validation-disabled' };
-        }
+          try { result = await quickValidateCookie(cookieObjects, sessionId); } catch (err) { result = { status: 'error', reason: err && err.message ? err.message : String(err) }; }
+        } else { result = { status: 'parsed', reason: 'validation-disabled' }; }
 
-        // emit SSE based on result
-        if (result.status === 'live') {
-          sseSend(sessionId, 'cookieStatus', { status: 'live', lineIndex: i + 1, reason: result.reason, url: result.url || null });
-        } else if (result.status === 'invalid') {
-          sseSend(sessionId, 'cookieStatus', { status: 'invalid', lineIndex: i + 1, reason: result.reason, url: result.url || null });
-        } else if (result.status === 'parsed') {
-          sseSend(sessionId, 'cookieStatus', { status: 'parsed', lineIndex: i + 1, reason: result.reason });
-        } else {
-          sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: result.reason });
-        }
+        if (result.status === 'live') sseSend(sessionId, 'cookieStatus', { status:'live', lineIndex:i+1, reason: result.reason, url: result.url || null });
+        else if (result.status === 'invalid') sseSend(sessionId, 'cookieStatus', { status:'invalid', lineIndex:i+1, reason: result.reason, url: result.url || null });
+        else if (result.status === 'parsed') sseSend(sessionId, 'cookieStatus', { status:'parsed', lineIndex:i+1, reason: result.reason });
+        else sseSend(sessionId, 'cookieStatus', { status:'error', lineIndex:i+1, reason: result.reason });
 
-        const entryObj = {
-          lineIndex: i + 1,
-          originalLine: line,
-          snippet,
-          hasCUser, hasXs, isAccount,
-          parsedAt: (new Date()).toISOString(),
-          validateResult: result
-        };
-        COOKIE_INDEX.cookies.push(entryObj);
+        COOKIE_INDEX.cookies.push({
+          lineIndex: i + 1, originalLine: line, snippet, hasCUser, hasXs, isAccount, parsedAt: (new Date()).toISOString(), validateResult: result
+        });
         saveCookieIndex();
 
-        // polite gap between validations
         await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
       } catch (lineErr) {
         simpleLog('uploadCookies-line-error', { lineIndex: i + 1, error: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
         sseSend(sessionId, 'cookieStatus', { status: 'error', lineIndex: i + 1, reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) });
-
         COOKIE_INDEX.cookies.push({
-          lineIndex: i + 1,
-          originalLine: line,
-          snippet: (line.length > 60 ? line.slice(0,40) + '...' : line),
-          hasCUser: false,
-          hasXs: false,
-          isAccount: false,
-          parsedAt: (new Date()).toISOString(),
+          lineIndex: i + 1, originalLine: line, snippet: (line.length > 60 ? line.slice(0,40) + '...' : line),
+          hasCUser: false, hasXs: false, isAccount: false, parsedAt: (new Date()).toISOString(),
           validateResult: { status: 'error', reason: lineErr && lineErr.message ? lineErr.message : String(lineErr) }
         });
         saveCookieIndex();
@@ -853,7 +853,7 @@ app.post('/uploadCookies', requireAdmin, upload.single('cookies'), async (req, r
   }
 });
 
-// cookieList endpoint for UI
+// cookie list
 app.get('/cookieList', requireAdmin, (req,res) => {
   recalcCounts();
   res.json({
@@ -863,7 +863,7 @@ app.get('/cookieList', requireAdmin, (req,res) => {
   });
 });
 
-// get single cookie detail
+// get single cookie
 app.get('/cookie/:lineIndex', requireAdmin, (req,res) => {
   const idx = parseInt(req.params.lineIndex, 10);
   if (!idx) return res.status(400).json({ ok:false, message:'bad index' });
@@ -879,7 +879,7 @@ app.post('/cookieIndex/clear', requireAdmin, (req,res) => {
   res.json({ ok:true });
 });
 
-// start
+// start runner
 app.post('/start', requireAdmin, (req, res) => {
   const body = req.body || {};
   const sessionId = body.sessionId || 'default';
@@ -894,7 +894,7 @@ app.post('/start', requireAdmin, (req, res) => {
   res.json({ ok:true, message:'Job started', sessionId });
 });
 
-// stop
+// stop runner
 app.post('/stop', requireAdmin, async (req, res) => {
   const sessionId = req.body.sessionId || 'default';
   const sess = getSession(sessionId);
@@ -902,7 +902,7 @@ app.post('/stop', requireAdmin, async (req, res) => {
   sess.abort = true;
   sseSend(sessionId,'info',{msg:'Stop requested by user'});
   try {
-    for (const p of sess.pages) { try { detachLivePreview(sessionId, p); await p.close(); } catch(e) {} }
+    for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
     sess.pages = [];
     for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
     sess.contexts = [];
@@ -911,7 +911,7 @@ app.post('/stop', requireAdmin, async (req, res) => {
   return res.json({ ok:true, message:'Stop requested and cleanup attempted' });
 });
 
-// clearLogs
+// clear logs (session)
 app.post('/clearLogs', requireAdmin, (req,res) => {
   const sid = req.body.sessionId || 'default';
   const sess = getSession(sid);
@@ -926,7 +926,7 @@ app.get('/status', requireAdmin, (req,res) => {
   res.json({ running: sess.running, abort: sess.abort, logs: sess.logs.slice(-200) });
 });
 
-// exampleCookies
+// example cookies
 app.get('/exampleCookies', (req,res) => {
   res.type('text/plain').send('fr=...; xs=...; c_user=1000...; datr=...; sb=...; wd=390x844;');
 });
@@ -948,7 +948,7 @@ async function gracefulShutdown() {
   for (const [sid, sess] of sessions.entries()) {
     try {
       sess.abort = true;
-      for (const p of sess.pages) { try { detachLivePreview(sid, p); await p.close(); } catch(e) {} }
+      for (const p of sess.pages) { try { await p.close(); } catch(e) {} }
       for (const c of sess.contexts) { try { await c.close(); } catch(e) {} }
       if (sess.browser) { try { await sess.browser.close(); } catch(e) {} }
     } catch (e) {}
@@ -958,7 +958,7 @@ async function gracefulShutdown() {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// start listener
+// start server
 app.listen(PORT, () => {
   simpleLog(`🚀 Server listening on port ${PORT}`);
 });
