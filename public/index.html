@@ -154,30 +154,22 @@
       </div>
     </div>
 
-    <!-- Control Panel (replaced Cookie Manager) -->
-    <div class="card" role="region" aria-label="Control Panel">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="font-weight:800; font-size:16px">Control Panel</div>
-        <div class="small">Quick links to Live preview & Cookie manager pages</div>
-      </div>
+<!-- Controls -->
+<div class="card" style="display:flex; justify-content:space-between; align-items:center;">
+  <div>
+    <div style="font-weight:800">Runner Controls</div>
+    <div class="small">Start/stop the server-side runner for the saved cookies.</div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <button id="startBtn" class="btn btn-start">Start</button>
+    <button id="stopBtn" class="btn btn-stop">Stop</button>
 
-      <div class="control-panel" style="margin-top:10px;">
-        <div class="control-row">
-          <button id="seeLive" class="link-btn">See Live</button>
-          <button id="cookieMgr" class="link-btn">Cookie Manager</button>
-        </div>
+    <!-- New: quick-access links that open in a NEW TAB -->
+    <a id="seeLiveBtn" class="btn btn-ghost" href="/live.html" target="_blank" rel="noopener noreferrer" style="margin-left:8px; padding:10px 14px;">See Live</a>
 
-        <div style="font-weight:800; margin-top:6px;">Runner Controls</div>
-        <div class="control-row">
-          <button id="startBtnPanel" class="btn-start">Start Runner</button>
-          <button id="stopBtnPanel" class="btn-stop">Stop Runner</button>
-        </div>
-
-        <div class="small" style="color:var(--muted); margin-top:8px;">
-          Note: Cookie upload & detailed list moved to Cookie Manager page.
-        </div>
-      </div>
-    </div>
+    <a id="cookieMgrBtn" class="btn btn-ghost" href="/cookie.html" target="_blank" rel="noopener noreferrer" style="margin-left:6px; padding:10px 14px;">Cookie Manager</a>
+  </div>
+</div>
 
     <!-- Live logs -->
     <div class="logs-card card" role="region">
