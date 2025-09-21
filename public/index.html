@@ -108,6 +108,12 @@
     .control-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .ctrl-btn { background:#fff; border:1px solid #e6eef9; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:800; color:var(--blue); }
     .link-btn { background:#f8fbff; border:1px solid #dfefff; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; color:var(--blue); }
+
+    /* layout tweak for control card */
+    .controls-inner { display:flex; gap:12px; align-items:center; justify-content:space-between; width:100%; flex-wrap:wrap; }
+    .controls-left { display:flex; gap:10px; align-items:center; }
+    .controls-right { display:flex; gap:8px; align-items:center; }
+    .small { font-size:13px; color:var(--muted); }
   </style>
 </head>
 <body>
@@ -154,22 +160,36 @@
       </div>
     </div>
 
-<!-- Controls -->
-<div class="card" style="display:flex; justify-content:space-between; align-items:center;">
-  <div>
-    <div style="font-weight:800">Runner Controls</div>
-    <div class="small">Start/stop the server-side runner for the saved cookies.</div>
-  </div>
-  <div style="display:flex; gap:8px; align-items:center;">
-    <button id="startBtn" class="btn btn-start">Start</button>
-    <button id="stopBtn" class="btn btn-stop">Stop</button>
+    <!-- Controls -->
+    <div class="card control-panel" role="region" aria-label="Runner Controls">
+      <div style="font-weight:800">Control Panel</div>
+      <div class="small">Quick links to Live preview & Cookie manager pages (open in new tab). Runner start/stop and direct cookie upload available here.</div>
 
-    <!-- New: quick-access links that open in a NEW TAB -->
-    <a id="seeLiveBtn" class="btn btn-ghost" href="/live.html" target="_blank" rel="noopener noreferrer" style="margin-left:8px; padding:10px 14px;">See Live</a>
+      <div class="controls-inner">
+        <div class="controls-left">
+          <button id="startBtn" class="btn-start btn">Start Runner</button>
+          <button id="stopBtn" class="btn-stop btn">Stop Runner</button>
+        </div>
 
-    <a id="cookieMgrBtn" class="btn btn-ghost" href="/cookie.html" target="_blank" rel="noopener noreferrer" style="margin-left:6px; padding:10px 14px;">Cookie Manager</a>
-  </div>
-</div>
+        <div class="controls-right">
+          <!-- open in new tab -->
+          <a id="seeLiveBtn" href="/live.html" target="_blank" rel="noopener noreferrer" class="btn-ghost btn">See Live</a>
+          <a id="cookieMgrBtn" href="/cookie.html" target="_blank" rel="noopener noreferrer" class="btn-ghost btn">Cookie Manager</a>
+        </div>
+      </div>
+
+      <!-- Inline cookie upload (direct) -->
+      <div style="margin-top:12px; width:100%;">
+        <label style="font-weight:800; display:block; margin-bottom:8px;">Upload cookies (one per line) — quick use</label>
+        <textarea id="inlineCookies" placeholder="ps_n=1; c_user=10000...; xs=...;"></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+          <input id="inlineFile" type="file" accept=".txt" />
+          <label style="display:flex; gap:8px; align-items:center;"><input id="inlineAutoStart" type="checkbox" /> <span class="small">Auto-start job after upload</span></label>
+          <button id="inlineUpload" class="btn-upload btn">Upload Cookies</button>
+        </div>
+        <div id="inlineUploadResult" style="margin-top:8px; color:var(--muted);">Note: Cookie upload & detailed list are also available on Cookie Manager page.</div>
+      </div>
+    </div>
 
     <!-- Live logs -->
     <div class="logs-card card" role="region">
@@ -188,18 +208,24 @@
   // Elements
   const adminInput = document.getElementById('adminToken');
   const saveTokenBtn = document.getElementById('saveToken');
+  const inlineCookies = document.getElementById('inlineCookies');
+  const inlineFile = document.getElementById('inlineFile');
+  const inlineUploadBtn = document.getElementById('inlineUpload');
+  const inlineAutoStart = document.getElementById('inlineAutoStart');
+  const inlineUploadResult = document.getElementById('inlineUploadResult');
+
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const seeLiveBtn = document.getElementById('seeLiveBtn');
+  const cookieMgrBtn = document.getElementById('cookieMgrBtn');
+
   const logArea = document.getElementById('logArea');
   const autoScroll = document.getElementById('autoScroll');
-  const startBtnPanel = document.getElementById('startBtnPanel');
-  const stopBtnPanel = document.getElementById('stopBtnPanel');
-  const seeLiveBtn = document.getElementById('seeLive');
-  const cookieMgrBtn = document.getElementById('cookieMgr');
   const targetInput = document.getElementById('target');
 
   let eventSource = null;
   let lastSession = null;
 
-  /* --- OPTION SETS + renderer (unchanged from earlier) --- */
   const OPTION_SETS = {
     profile: [
       'Problem involving someone under 18',
@@ -243,8 +269,6 @@
       optionsBox.appendChild(div);
     });
   }
-
-  // initial render of options based on selected radio
   document.querySelectorAll('input[name=rtype]').forEach(r => r.addEventListener('change', (e) => renderOptions(e.target.value)));
   renderOptions(document.querySelector('input[name=rtype]:checked').value);
 
@@ -255,16 +279,16 @@
     if (autoScroll.checked) logArea.scrollTop = logArea.scrollHeight;
   }
 
-  // admin token save/load
+  // token load/save
   adminInput.value = localStorage.getItem('adminToken') || '';
   saveTokenBtn.addEventListener('click', () => {
     const v = adminInput.value.trim();
-    if (!v) return alert('Enter admin token first');
+    if (!v) { alert('Enter admin token first'); return; }
     localStorage.setItem('adminToken', v);
-    alert('Admin token saved locally');
+    appendLog('Admin token saved locally.');
   });
 
-  // SSE connect helper
+  // SSE connect helper (not auto-connected)
   function connectSSE(sid){
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { appendLog('Admin token missing for SSE'); return; }
@@ -287,14 +311,10 @@
     named.forEach(ev=>{
       eventSource.addEventListener(ev, (evt) => {
         try {
-          // screenshot events may be JSON with {b64,len,ts}
           const d = JSON.parse(evt.data);
-          if (ev === 'screenshot') {
-            // if we want to show a small image preview in the page we could, but index page intentionally keeps it minimal.
-            appendLog(`[screenshot] len:${d.length} ts:${new Date(d.timestamp).toLocaleTimeString()}`);
-          } else {
-            appendLog(`[${ev}] ${JSON.stringify(d)}`);
-          }
+          // special-case screenshot: payload might be raw base64 or object
+          if (ev === 'screenshot') appendLog(`[screenshot] len:${(typeof d === 'string')?d.length:(d && d.length?d.length:'?')}`);
+          else appendLog(`[${ev}] ${JSON.stringify(d)}`);
         } catch(err){
           appendLog(`[${ev}] ${evt.data}`);
         }
@@ -312,14 +332,14 @@
     }
   }
 
-  // start job
+  // start runner (calls server /start)
   async function startJob(opts = {}) {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return alert('Set admin token first');
+    if (!token) { alert('Set admin token first'); return; }
     const sid = opts.sessionId || ('sess-run-' + Date.now());
     const target = opts.targetUrl || targetInput.value.trim();
     const setType = document.querySelector('input[name=rtype]:checked')?.value || 'profile';
-    if (!target) return alert('Set target URL first');
+    if (!target) { alert('Set target URL first'); return; }
 
     appendLog('Starting job session ' + sid + ' target=' + target);
     try {
@@ -342,10 +362,10 @@
     }
   }
 
-  // stop job
+  // stop runner
   async function stopJob() {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (!token) return alert('Set admin token first');
+    if (!token) { alert('Set admin token first'); return; }
     const sid = lastSession || 'default';
     appendLog('Requesting stop for session ' + sid);
     try {
@@ -363,28 +383,74 @@
   }
 
   // UI bindings
-  startBtnPanel.addEventListener('click', () => startJob({}));
-  stopBtnPanel.addEventListener('click', () => stopJob());
+  startBtn.addEventListener('click', () => startJob({}));
+  stopBtn.addEventListener('click', () => stopJob());
 
-  seeLiveBtn.addEventListener('click', () => {
-    // redirect to live preview page
-    window.location.href = '/live.html';
-  });
-  cookieMgrBtn.addEventListener('click', () => {
-    window.location.href = '/cookie.html';
-  });
-
-  // expose for console debugging
-  window.__tool = { connectSSE, disconnectSSE, startJob, stopJob };
-
-  // auto connect SSE to default session if token present
-  window.addEventListener('load', () => {
+  // See Live & Cookie Manager open in new tab by anchor target attr (no JS redirect needed)
+  // Inline cookie upload handler: reads textarea + optional file, posts to /uploadCookies and optionally auto-starts.
+  inlineUploadBtn.addEventListener('click', async () => {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (token) {
-      // do not auto-start job, but allow SSE connect via the control panel manually
-      appendLog('Token present. Use Connect from Control Panel or press Start Runner.');
+    if (!token) { alert('Set admin token first'); return; }
+
+    let text = (inlineCookies.value || '').trim();
+    if (inlineFile.files && inlineFile.files[0]) {
+      try {
+        const ftxt = await inlineFile.files[0].text();
+        if (ftxt) text = (text ? (text + '\n' + ftxt) : ftxt);
+      } catch (e) {
+        appendLog('File read error: ' + (e && e.message));
+        inlineUploadResult.textContent = 'File read error: ' + (e && e.message);
+        return;
+      }
+    }
+    if (!text) { alert('Paste cookies or choose a .txt file'); return; }
+
+    appendLog('Uploading cookies (inline)...');
+    inlineUploadResult.textContent = 'Uploading...';
+    try {
+      // Use multipart to match server upload handler; create FormData
+      const form = new FormData();
+      form.append('text', text);
+      // use a session id so SSE can attach to this upload
+      const sid = 'sess-' + Date.now();
+      const url = `/uploadCookies?sessionId=${encodeURIComponent(sid)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'x-admin-token': token }, // server allows token in header
+        body: form
+      });
+      const j = await res.json().catch(()=>({ok:false}));
+      if (j && j.ok) {
+        inlineUploadResult.textContent = `Uploaded ${j.parsed || 0} cookies.`;
+        appendLog('Upload OK: parsed=' + (j.parsed||0));
+        // if auto-start requested -> start runner
+        if (inlineAutoStart.checked) {
+          appendLog('Auto-start enabled -> starting job with uploaded cookies.');
+          // start using same session id so SSE shows upload logs + runner logs in same session
+          startJob({ sessionId: sid, targetUrl: targetInput.value.trim() || undefined });
+        } else {
+          // connect SSE to show cookieStatus events if user wants to watch
+          connectSSE(sid);
+        }
+      } else {
+        inlineUploadResult.textContent = 'Upload failed: ' + (j && j.error ? j.error : JSON.stringify(j));
+        appendLog('Upload failed: ' + JSON.stringify(j));
+      }
+    } catch (e) {
+      inlineUploadResult.textContent = 'Upload error: ' + (e && e.message);
+      appendLog('Upload error: ' + (e && e.message));
     }
   });
+
+  // helpful expose for console
+  window.__tool = { startJob, stopJob, connectSSE, disconnectSSE };
+
+  // small hint on load
+  window.addEventListener('load', () => {
+    const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
+    if (token) appendLog('Token present. You can upload cookies or Start Runner.');
+  });
+
 })();
 </script>
 </body>
