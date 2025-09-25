@@ -910,6 +910,59 @@ app.post('/cookieIndex/clear', requireAdmin, (req,res) => {
   res.json({ ok:true });
 });
 
+// QUICK upload: no validation, just save lines and index them as 'parsed: uploaded-quick'
+app.post('/uploadQuick', requireAdmin, upload.single('cookies'), async (req, res) => {
+  const sessionId = req.query.sessionId || req.body.sessionId || 'default';
+  try {
+    let raw = '';
+    if (req.file) {
+      const target = path.join(UPLOAD_DIR, 'cookies.txt');
+      await fsp.copyFile(req.file.path, target);
+      try { await fsp.unlink(req.file.path); } catch(_) {}
+      raw = await fsp.readFile(target, 'utf8');
+      sseSend(sessionId, 'log', { msg: 'quick-upload: cookies file saved' });
+    } else if (req.body && req.body.text) {
+      raw = String(req.body.text || '').trim();
+      if (!raw) return res.status(400).json({ ok:false, message:'Empty text' });
+      await fsp.writeFile(path.join(UPLOAD_DIR,'cookies.txt'), raw, 'utf8');
+      sseSend(sessionId, 'log', { msg: 'quick-upload: cookies written from text' });
+    } else {
+      return res.status(400).json({ ok:false, message:'No file or text' });
+    }
+
+    const lines = raw.split(/\r?\n|\r|\n/g).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return res.json({ ok:true, parsed: 0, totalLines:0 });
+
+    // reset index
+    COOKIE_INDEX.cookies = [];
+
+    for (let i=0;i<lines.length;i++){
+      const line = lines[i];
+      const { kv, hasCUser, hasXs, isAccount } = parseLineToKv(line);
+      const snippet = makeSnippetFromKv(line, kv);
+
+      // insert into index AS PARSED but mark validation skipped (uploaded-quick)
+      COOKIE_INDEX.cookies.push({
+        lineIndex: i+1,
+        originalLine: line,
+        snippet,
+        hasCUser, hasXs, isAccount,
+        parsedAt: (new Date()).toISOString(),
+        validateResult: { status: 'parsed', reason: 'uploaded-quick' }
+      });
+
+      // notify via SSE that a cookie was indexed (optional)
+      sseSend(sessionId, 'cookieStatus', { status: 'parsed', lineIndex: i+1, snippet, reason:'uploaded-quick' });
+    }
+
+    saveCookieIndex();
+    return res.json({ ok:true, parsed: lines.length, totalLines: lines.length });
+  } catch (e) {
+    simpleLog('uploadQuick-error', e && e.message);
+    return res.status(500).json({ ok:false, error: e && e.message ? e.message : String(e) });
+  }
+});
+
 // start runner
 app.post('/start', requireAdmin, (req, res) => {
   const body = req.body || {};
