@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Facebook Automation Tool</title>
+  <title>Facebook Automation Tool — Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
   <style>
     :root{
@@ -19,7 +19,7 @@
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
-      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
       background:var(--page-bg);
       margin:0; padding:24px;
       color:#0f1724;
@@ -33,31 +33,20 @@
     }
 
     .header-wrap {
-      background: #071025; border-radius:18px; padding:26px 28px; color:#dbeafe;
+      background: #071025; border-radius:18px; padding:22px 18px; color:#dbeafe;
       box-shadow: 0 14px 40px rgba(2,6,23,0.45);
       display:flex; flex-direction:column; align-items:center; text-align:center;
       flex: 1 1 60%; min-width:260px; max-width:calc(60% - 10px);
     }
-    .header-title {
-      white-space: nowrap !important;
-      overflow: visible !important;
-      text-overflow: clip !important;
-      display: inline-block !important;
-      max-width: 100% !important;
-      font-size: clamp(16px, 4.6vw, 36px) !important;
-      line-height: 1 !important;
-      transform: none !important;
-    }
-    .header-meta { font-size:14px; color: #9fb4d3; margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
-    .header-meta strong { color:#fff; font-weight:800; }
-    .team-badge { margin-top:10px; color:#4fb0ff; font-weight:900; letter-spacing:0.6px; font-size:15px; }
+    .header-title { font-size:20px; font-weight:800; }
+    .header-meta { font-size:13px; color: #9fb4d3; margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; }
+    .team-badge { margin-top:8px; color:#4fb0ff; font-weight:800; font-size:13px; }
 
     .card { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:0 6px 18px rgba(20,30,60,0.06); margin-bottom:16px; }
     .report-card { padding:18px; border-radius:16px; display:block; flex:1 1 36%; min-width:300px; max-width:calc(40% - 10px); }
 
     @media(max-width:900px){
       .header-wrap, .report-card { max-width:100%; flex-basis:100%; }
-      .header-title { font-size: clamp(20px, 7vw, 34px); white-space: normal; }
     }
 
     .section-title { font-size:18px; font-weight:800; margin-bottom:6px; }
@@ -72,44 +61,22 @@
     .btn { cursor:pointer; border:0; padding:10px 16px; border-radius:12px; font-weight:700; }
     .btn-ghost { background:transparent; border:1px solid #cfe0ff; color:var(--blue); padding:10px 14px; border-radius:12px; }
     .btn-upload { background:transparent; border:1px solid #dfefff; color:var(--blue); padding:12px 18px; border-radius:14px; font-weight:800; }
-    .btn-start { background:var(--blue); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 14px 36px rgba(24,105,255,0.14); }
-    .btn-stop { background:var(--accent); color:#fff; padding:14px 30px; border-radius:16px; font-size:16px; box-shadow:0 12px 28px rgba(255,77,79,0.12); }
+    .btn-start { background:var(--blue); color:#fff; padding:12px 22px; border-radius:14px; font-size:15px; box-shadow:0 10px 28px rgba(24,105,255,0.12); }
+    .btn-stop { background:var(--accent); color:#fff; padding:12px 22px; border-radius:14px; font-size:15px; box-shadow:0 10px 28px rgba(255,77,79,0.10); }
 
-    .target input { width:100%; padding:14px; border-radius:12px; border:1px solid #e6eef9; }
+    .target input { width:100%; padding:12px; border-radius:12px; border:1px solid #e6eef9; }
 
     .options-list { margin-top:12px; display:grid; gap:12px; }
-    .option-item { display:flex; gap:12px; align-items:center; padding:14px; border-radius:12px; border:1px solid #eef3fb; background:white; font-weight:700; font-size:15px; }
-    .option-item input{ width:20px; height:20px; transform:scale(1.05); }
-
-    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
-    th, td { padding:8px 10px; border-bottom:1px solid #eef2f6; text-align:left; vertical-align:top; }
-    th { background:#fbfdff; font-weight:800; font-size:13px; }
-    .snippet { max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
-    .reason { max-width:280px; word-break:break-all; font-size:12px; color:#333; }
-    .status-live { color: #059669; font-weight:800; }
-    .status-invalid { color:#dc2626; font-weight:800; }
-    .status-parsed { color:#374151; font-weight:700; }
-    .status-error { color: #b45309; font-weight:800; }
+    .option-item { display:flex; gap:12px; align-items:center; padding:12px; border-radius:12px; border:1px solid #eef3fb; background:white; font-weight:700; font-size:14px; }
+    .option-item input{ width:18px; height:18px; transform:scale(1.05); }
 
     .log-area { background:#000; color:#66ff99; padding:14px; border-radius:8px; height:320px; overflow:auto; font-family:monospace; font-size:13px; white-space:pre-wrap; }
-    #cookieLog { background:#0b1220; color:#9fe0ff; padding:10px; border-radius:8px; height:180px; overflow:auto; font-family:monospace; font-size:12px; }
-
-    .logs-card { padding:22px; border-radius:16px; background: linear-gradient(180deg,#0b1a25,#07121a); color:#cbeee0; box-shadow: 0 14px 40px rgba(2,6,23,0.45); margin-top:12px; }
-    .log-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; font-size:18px; color:#f1d4ff; }
-    pre.log-area{ background:#000; color:#66ff99; padding:22px; border-radius:12px; height:360px; overflow:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; font-size:15px; border: 1px solid rgba(255,255,255,0.04); box-shadow: inset 0 6px 20px rgba(0,0,0,0.6); white-space:pre-wrap; }
-
-    textarea#textCookies { width:100%; min-height:120px; padding:12px; border-radius:10px; border:1px solid #e6eef9; resize:vertical; font-family:inherit; font-size:13px; }
-    input[type=file] { font-size:13px; }
+    textarea#inlineCookies { width:100%; min-height:120px; padding:12px; border-radius:10px; border:1px solid #e6eef9; resize:vertical; font-family:inherit; font-size:13px; }
 
     footer { margin-top:18px; text-align:center; font-size:13px; color:var(--muted); padding:12px 0; }
 
-    /* small helpers for control panel */
+    /* control layout */
     .control-panel { display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
-    .control-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .ctrl-btn { background:#fff; border:1px solid #e6eef9; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:800; color:var(--blue); }
-    .link-btn { background:#f8fbff; border:1px solid #dfefff; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; color:var(--blue); }
-
-    /* layout tweak for control card */
     .controls-inner { display:flex; gap:12px; align-items:center; justify-content:space-between; width:100%; flex-wrap:wrap; }
     .controls-left { display:flex; gap:10px; align-items:center; }
     .controls-right { display:flex; gap:8px; align-items:center; }
@@ -125,10 +92,8 @@
           <div role="listitem">👤 Author: <strong>PRAVAS BERA</strong></div>
           <div role="separator">|</div>
           <div role="listitem">🌍 Version: <strong>Premium</strong></div>
-          <div role="separator">|</div>
-          <div role="listitem">🇮🇳 Country: <strong>INDIA</strong></div>
         </div>
-        <div class="team-badge">🔥 INDIAN DANGER OF BULLET TEAM 🔥</div>
+        <div class="team-badge">🔥 BULLET TEAM</div>
       </div>
 
       <div class="card report-card" role="region" aria-label="Choose report type">
@@ -143,7 +108,7 @@
           <label class="radio-pill"><input type="radio" name="rtype" value="post"> Post</label>
         </div>
 
-        <div class="target" style="margin-top:14px;">
+        <div class="target" style="margin-top:12px;">
           <label style="font-weight:800; display:block; margin-bottom:8px;">Target URL / ID</label>
           <input id="target" type="text" placeholder="https://facebook.com/..." aria-label="Target URL or ID" />
         </div>
@@ -172,22 +137,23 @@
         </div>
 
         <div class="controls-right">
-          <!-- open in new tab -->
           <a id="seeLiveBtn" href="/live.html" target="_blank" rel="noopener noreferrer" class="btn-ghost btn">See Live</a>
           <a id="cookieMgrBtn" href="/cookie.html" target="_blank" rel="noopener noreferrer" class="btn-ghost btn">Cookie Manager</a>
         </div>
       </div>
 
-      <!-- Inline cookie upload (direct) -->
+      <!-- Inline cookie upload (direct / quick) -->
       <div style="margin-top:12px; width:100%;">
-        <label style="font-weight:800; display:block; margin-bottom:8px;">Upload cookies (one per line) — quick use</label>
+        <label style="font-weight:800; display:block; margin-bottom:8px;">Upload cookies (one per line)</label>
         <textarea id="inlineCookies" placeholder="ps_n=1; c_user=10000...; xs=...;"></textarea>
-        <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
           <input id="inlineFile" type="file" accept=".txt" />
+          <label style="display:flex; gap:8px; align-items:center;"><input id="inlineQuick" type="checkbox" /> <span class="small">Quick (no validation)</span></label>
           <label style="display:flex; gap:8px; align-items:center;"><input id="inlineAutoStart" type="checkbox" /> <span class="small">Auto-start job after upload</span></label>
           <button id="inlineUpload" class="btn-upload btn">Upload Cookies</button>
         </div>
-        <div id="inlineUploadResult" style="margin-top:8px; color:var(--muted);">Note: Cookie upload & detailed list are also available on Cookie Manager page.</div>
+        <div id="inlineUploadResult" style="margin-top:8px; color:var(--muted);">Tip: Use Cookie Manager to validate and download filtered lists.</div>
       </div>
     </div>
 
@@ -197,7 +163,7 @@
         <div style="font-weight:800">Live Log</div>
         <div><input id="autoScroll" type="checkbox" checked/> <label for="autoScroll" class="small">Auto-scroll</label></div>
       </div>
-      <pre id="logArea" class="log-area">✅ Connected</pre>
+      <pre id="logArea" class="log-area">✅ Ready</pre>
     </div>
 
     <footer>© 2025 Facebook Automation Tool — BULLET TEAM</footer>
@@ -211,20 +177,19 @@
   const inlineCookies = document.getElementById('inlineCookies');
   const inlineFile = document.getElementById('inlineFile');
   const inlineUploadBtn = document.getElementById('inlineUpload');
+  const inlineQuickChk = document.getElementById('inlineQuick');
   const inlineAutoStart = document.getElementById('inlineAutoStart');
   const inlineUploadResult = document.getElementById('inlineUploadResult');
 
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
-  const seeLiveBtn = document.getElementById('seeLiveBtn');
-  const cookieMgrBtn = document.getElementById('cookieMgrBtn');
 
   const logArea = document.getElementById('logArea');
   const autoScroll = document.getElementById('autoScroll');
   const targetInput = document.getElementById('target');
 
-  let eventSource = null;
-  let lastSession = null;
+  const seeLiveBtn = document.getElementById('seeLiveBtn');
+  const cookieMgrBtn = document.getElementById('cookieMgrBtn');
 
   const OPTION_SETS = {
     profile: [
@@ -272,10 +237,11 @@
   document.querySelectorAll('input[name=rtype]').forEach(r => r.addEventListener('change', (e) => renderOptions(e.target.value)));
   renderOptions(document.querySelector('input[name=rtype]:checked').value);
 
-  // helpers
+  // small helpers
   function nowTime(){ return new Date().toLocaleTimeString(); }
-  function appendLog(s){
-    logArea.textContent += `[${nowTime()}] ${s}\n`;
+  function appendLog(s, level='info'){
+    const prefix = level === 'warn' ? '⚠' : level === 'error' ? '✖' : level === 'success' ? '✔' : '•';
+    logArea.textContent += `[${nowTime()}] ${prefix} ${s}\n`;
     if (autoScroll.checked) logArea.scrollTop = logArea.scrollHeight;
   }
 
@@ -285,54 +251,67 @@
     const v = adminInput.value.trim();
     if (!v) { alert('Enter admin token first'); return; }
     localStorage.setItem('adminToken', v);
-    appendLog('Admin token saved locally.');
+    appendLog('Admin token saved locally.', 'success');
   });
 
-  // SSE connect helper (not auto-connected)
+  // SSE connection helper to view events for a session (used after upload or when runner started)
+  let es = null;
   function connectSSE(sid){
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { appendLog('Admin token missing for SSE'); return; }
     if (!sid) sid = 'default';
     disconnectSSE();
-    lastSession = sid;
-    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
-    appendLog('Connecting SSE: ' + url);
+    appendLog('Connecting SSE to session: ' + sid);
     try {
-      eventSource = new EventSource(url);
+      es = new EventSource(`/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`);
     } catch (e) {
-      appendLog('EventSource creation failed: ' + (e && e.message));
+      appendLog('EventSource init failed: ' + (e && e.message), 'error');
       return;
     }
-    eventSource.onopen = () => appendLog('SSE connected');
-    eventSource.onmessage = (e) => {
+    es.onopen = () => appendLog('SSE connected', 'success');
+    es.onmessage = (e) => {
+      // generic message
       appendLog('[msg] ' + e.data);
     };
+
     const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
     named.forEach(ev=>{
-      eventSource.addEventListener(ev, (evt) => {
+      es.addEventListener(ev, (evt) => {
+        // don't spam the log with large screenshot payloads
+        if (ev === 'screenshot') {
+          // try parse data length if possible
+          try {
+            const p = JSON.parse(evt.data);
+            if (typeof p === 'string') appendLog(`[screenshot] len:${p.length}`);
+            else if (p && p.data) appendLog(`[screenshot] len:${(p.data||'').length}`);
+            else appendLog('[screenshot]');
+          } catch (err) { appendLog('[screenshot]'); }
+          return;
+        }
         try {
           const d = JSON.parse(evt.data);
-          // special-case screenshot: payload might be raw base64 or object
-          if (ev === 'screenshot') appendLog(`[screenshot] len:${(typeof d === 'string')?d.length:(d && d.length?d.length:'?')}`);
-          else appendLog(`[${ev}] ${JSON.stringify(d)}`);
-        } catch(err){
-          appendLog(`[${ev}] ${evt.data}`);
+          appendLog(`[${ev}] ${JSON.stringify(d)}`, ev === 'warn' || ev === 'error' ? 'warn' : 'info');
+        } catch (err) {
+          appendLog(`[${ev}] ${evt.data}`, ev === 'warn' || ev === 'error' ? 'warn' : 'info');
         }
       });
     });
-    eventSource.onerror = (e) => {
-      appendLog('SSE error/closed');
+
+    es.onerror = (e) => {
+      appendLog('SSE error/closed', 'warn');
+      try { es.close(); } catch(_) {}
+      es = null;
     };
   }
   function disconnectSSE(){
-    if (eventSource) {
-      try { eventSource.close(); } catch(e){}
-      eventSource = null;
-      appendLog('SSE disconnected');
+    if (es) {
+      try { es.close(); } catch(_) {}
+      es = null;
+      appendLog('SSE disconnected', 'info');
     }
   }
 
-  // start runner (calls server /start)
+  // start runner
   async function startJob(opts = {}) {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { alert('Set admin token first'); return; }
@@ -350,15 +329,14 @@
       });
       const j = await res.json();
       if (!j.ok) {
-        appendLog('Start failed: ' + JSON.stringify(j));
+        appendLog('Start failed: ' + JSON.stringify(j), 'error');
         alert('Start failed: ' + (j.message || JSON.stringify(j)));
         return;
       }
-      appendLog('Job started: sessionId=' + sid);
-      lastSession = sid;
+      appendLog('Job started: sessionId=' + sid, 'success');
       connectSSE(sid);
     } catch (e) {
-      appendLog('Start error: ' + (e && e.message));
+      appendLog('Start error: ' + (e && e.message), 'error');
     }
   }
 
@@ -366,28 +344,27 @@
   async function stopJob() {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { alert('Set admin token first'); return; }
-    const sid = lastSession || 'default';
-    appendLog('Requesting stop for session ' + sid);
+    appendLog('Requesting stop...');
     try {
       const res = await fetch('/stop', {
         method:'POST',
         headers: { 'Content-Type':'application/json', 'x-admin-token': token },
-        body: JSON.stringify({ sessionId: sid })
+        body: JSON.stringify({ sessionId: 'default' })
       });
       const j = await res.json().catch(()=>({}));
       appendLog('Stop response: ' + JSON.stringify(j));
       disconnectSSE();
     } catch (e) {
-      appendLog('Stop error: ' + (e && e.message));
+      appendLog('Stop error: ' + (e && e.message), 'error');
     }
   }
 
-  // UI bindings
   startBtn.addEventListener('click', () => startJob({}));
   stopBtn.addEventListener('click', () => stopJob());
 
-  // See Live & Cookie Manager open in new tab by anchor target attr (no JS redirect needed)
-  // Inline cookie upload handler: reads textarea + optional file, posts to /uploadCookies and optionally auto-starts.
+  // Inline cookie upload:
+  // If "Quick (no validation)" checked -> POST to /uploadQuick
+  // else -> POST to /uploadCookies (which will validate on server)
   inlineUploadBtn.addEventListener('click', async () => {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
     if (!token) { alert('Set admin token first'); return; }
@@ -398,57 +375,64 @@
         const ftxt = await inlineFile.files[0].text();
         if (ftxt) text = (text ? (text + '\n' + ftxt) : ftxt);
       } catch (e) {
-        appendLog('File read error: ' + (e && e.message));
+        appendLog('File read error: ' + (e && e.message), 'error');
         inlineUploadResult.textContent = 'File read error: ' + (e && e.message);
         return;
       }
     }
     if (!text) { alert('Paste cookies or choose a .txt file'); return; }
 
-    appendLog('Uploading cookies (inline)...');
+    const isQuick = inlineQuickChk.checked === true;
+    const autoStart = inlineAutoStart.checked === true;
+    const endpoint = isQuick ? '/uploadQuick' : '/uploadCookies';
+    const sid = 'sess-' + Date.now();
+
+    appendLog(`Uploading cookies -> ${endpoint} (session ${sid})`);
     inlineUploadResult.textContent = 'Uploading...';
+
     try {
-      // Use multipart to match server upload handler; create FormData
       const form = new FormData();
       form.append('text', text);
-      // use a session id so SSE can attach to this upload
-      const sid = 'sess-' + Date.now();
-      const url = `/uploadCookies?sessionId=${encodeURIComponent(sid)}`;
-      const res = await fetch(url, {
+
+      const resp = await fetch(`${endpoint}?sessionId=${encodeURIComponent(sid)}`, {
         method: 'POST',
-        headers: { 'x-admin-token': token }, // server allows token in header
+        headers: { 'x-admin-token': token },
         body: form
       });
-      const j = await res.json().catch(()=>({ok:false}));
+      const j = await resp.json().catch(()=>({ ok:false }));
       if (j && j.ok) {
         inlineUploadResult.textContent = `Uploaded ${j.parsed || 0} cookies.`;
-        appendLog('Upload OK: parsed=' + (j.parsed||0));
-        // if auto-start requested -> start runner
-        if (inlineAutoStart.checked) {
-          appendLog('Auto-start enabled -> starting job with uploaded cookies.');
-          // start using same session id so SSE shows upload logs + runner logs in same session
+        appendLog('Upload OK: parsed=' + (j.parsed || 0), 'success');
+        // connect SSE to watch cookieStatus events for this session
+        connectSSE(sid);
+        if (autoStart) {
+          appendLog('Auto-start enabled → starting runner with uploaded cookies', 'info');
+          // start runner using same session id (so SSE is continuous)
           startJob({ sessionId: sid, targetUrl: targetInput.value.trim() || undefined });
-        } else {
-          // connect SSE to show cookieStatus events if user wants to watch
-          connectSSE(sid);
         }
       } else {
-        inlineUploadResult.textContent = 'Upload failed: ' + (j && j.error ? j.error : JSON.stringify(j));
-        appendLog('Upload failed: ' + JSON.stringify(j));
+        inlineUploadResult.textContent = 'Upload failed: ' + (j && (j.message||j.error) ? (j.message||j.error) : JSON.stringify(j));
+        appendLog('Upload failed: ' + JSON.stringify(j), 'error');
       }
     } catch (e) {
       inlineUploadResult.textContent = 'Upload error: ' + (e && e.message);
-      appendLog('Upload error: ' + (e && e.message));
+      appendLog('Upload error: ' + (e && e.message), 'error');
     }
   });
 
-  // helpful expose for console
-  window.__tool = { startJob, stopJob, connectSSE, disconnectSSE };
+  // small convenience: double-click See Live / Cookie Manager anchors open in new tab (already have target=_blank)
+  seeLiveBtn.addEventListener('click', () => {
+    // no-op: anchor has target="_blank"
+  });
 
-  // small hint on load
+  // expose for debug
+  window.__tool = { startJob, stopJob, connectSSE, disconnectSSE, appendLog };
+
+  // load hint
   window.addEventListener('load', () => {
     const token = adminInput.value.trim() || localStorage.getItem('adminToken') || '';
-    if (token) appendLog('Token present. You can upload cookies or Start Runner.');
+    if (token) appendLog('Admin token present. Ready.');
+    else appendLog('Set admin token (x-admin-token) then Save.');
   });
 
 })();
