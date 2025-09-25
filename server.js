@@ -265,11 +265,15 @@ function attachLivePreview(sessionId, page, opts = {}) {
         try { sess.previewIntervals.delete(id); } catch(_) {}
         return;
       }
-      // take screenshot; small size for speed
-      const buf = await page.screenshot({ fullPage:false }).catch(()=>null);
-      if (!buf) return;
-      // send as raw base64 string payload (server's live.html accepts raw base64 or {data:...})
-      sseSend(sessionId, 'screenshot', buf.toString('base64'));
+// server: attachLivePreview -> replace screenshot send line with this JSON object
+const buf = await page.screenshot({ fullPage: false }).catch(()=>null);
+if (!buf) return;
+// send as JSON object so clients can parse easily
+sseSend(sessionId, 'screenshot', {
+  data: buf.toString('base64'),
+  timestamp: Date.now(),
+  length: buf.length
+});
     } catch (e) {
       simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
     }
