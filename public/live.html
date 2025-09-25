@@ -184,112 +184,94 @@
     }
   }
 
-  // SSE handling
-  function safeParse(data) {
-    try { return JSON.parse(data); } catch(e){ return null; }
+// live.html — SSE setup (script)
+function safeParse(data) {
+  try { return JSON.parse(data); } catch(e){ return null; }
+}
+
+function connect() {
+  const token = adminInput.value.trim();
+  const sid = sessionInput.value.trim() || 'default';
+  if (!token) { alert('Provide admin token (x-admin-token)'); return; }
+
+  // close previous
+  disconnect();
+
+  const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
+  pushLog(`Connecting SSE -> ${url}`);
+  setStatus('connecting...', 'status-idle');
+  try {
+    es = new EventSource(url);
+  } catch (e) {
+    pushLog('EventSource init failed: ' + (e && e.message), 'error');
+    setStatus('error', 'status-idle');
+    scheduleReconnect();
+    return;
   }
 
-  function connect() {
-    const token = adminInput.value.trim();
-    const sid = sessionInput.value.trim() || 'default';
-    if (!token) { alert('Provide admin token (x-admin-token)'); return; }
+  es.onopen = () => {
+    reconnectAttempts = 0;
+    setStatus('connected', 'status-live');
+    pushLog('SSE open');
+  };
 
-    // close previous
-    disconnect();
+  es.onmessage = (ev) => {
+    let d = safeParse(ev.data);
+    if (d === null) pushLog('[message] ' + ev.data);
+    else pushLog('[message] ' + JSON.stringify(d));
+  };
 
-    const url = `/events?sessionId=${encodeURIComponent(sid)}&adminToken=${encodeURIComponent(token)}`;
-    pushLog(`Connecting SSE -> ${url}`);
-    setStatus('connecting...', 'status-idle');
-    try {
-      es = new EventSource(url);
-    } catch (e) {
-      pushLog('EventSource init failed: ' + (e && e.message), 'error');
-      setStatus('error', 'status-idle');
-      scheduleReconnect();
-      return;
-    }
+  // named events
+  const events = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
+  events.forEach(name => {
+    es.addEventListener(name, (evt) => {
+      // try parse JSON
+      let payload = safeParse(evt.data);
+      if (name === 'screenshot') {
+        // payload may be {data: '<base64>', timestamp, length} or raw base64 string
+        if (payload && payload.data) {
+          handleScreenshot(payload.data);
+        } else {
+          // fallback: evt.data might be raw base64
+          handleScreenshot(evt.data);
+        }
+        // do not add large base64 blobs into the log area
+        // but we can log a short message
+        pushLog(`[screenshot] frame received`);
+        return;
+      }
 
-    es.onopen = () => {
-      reconnectAttempts = 0;
-      setStatus('connected', 'status-live');
-      pushLog('SSE open', 'info');
-    };
-
-    es.onmessage = (ev) => {
-      // generic messages (server sometimes sends JSON-stringified strings)
-      let d = safeParse(ev.data);
-      if (d === null) pushLog('[message] ' + ev.data);
-      else pushLog('[message] ' + JSON.stringify(d));
-    };
-
- // replace the broken named event handling block with this
-const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
-named.forEach((evName) => {
-  es.addEventListener(evName, (evt) => {
-    // try parse payload once
-    let payload;
-    try { payload = JSON.parse(evt.data); } catch(e) { payload = evt.data; }
-
-    // handle screenshots specially
-    if (evName === 'screenshot') {
-      // server may send raw base64 or { data: '...', timestamp: ... }
-      if (typeof payload === 'string') {
-        handleScreenshot(payload);
-      } else if (payload && payload.data) {
-        handleScreenshot(payload.data);
+      // non-screenshot events: show in log and update UI where possible
+      if (payload && typeof payload === 'object') {
+        // example: update URL/step/result if present
+        if (payload.url) {
+          curUrl.textContent = payload.url || '-';
+          document.getElementById('urlTime').textContent = now();
+          addTimeline('URL → ' + (payload.url || '-'));
+        }
+        if (payload.step) {
+          curAction.textContent = payload.step;
+          lastActionTime = Date.now();
+          addTimeline('Action → ' + payload.step);
+        }
+        if (payload.ok || payload.reason || payload.detail) {
+          curResult.textContent = payload.reason || (payload.detail ? JSON.stringify(payload.detail) : (payload.ok ? 'ok' : ''));
+        }
+        pushLog(`[${name}] ${JSON.stringify(payload)}`, name === 'warn' ? 'warn' : name === 'error' ? 'error' : 'info');
       } else {
-        // ignore other screenshot shapes
+        pushLog(`[${name}] ${evt.data}`, name === 'warn' ? 'warn' : name === 'error' ? 'error' : 'info');
       }
-      // optionally log a short info line (not the big base64)
-      pushLog('[screenshot] frame received', 'info');
-      addTimeline('Screenshot frame');
-      return;
-    }
-
-    // for other named events show compact info in log + update UI bits
-    const short = (obj) => {
-      try {
-        if (!obj) return '';
-        if (typeof obj === 'string') return obj;
-        // show msg/step/url/reason if present
-        return obj.msg || obj.step || obj.url || obj.reason || JSON.stringify(obj);
-      } catch (e) { return String(obj); }
-    };
-
-    // Update UI state from payload if possible
-    if (payload && typeof payload === 'object') {
-      if (payload.url) {
-        curUrl.textContent = payload.url || '-';
-        document.getElementById('urlTime').textContent = now();
-        addTimeline('URL → ' + (payload.url || '-'));
-      }
-      if (payload.step) {
-        curAction.textContent = payload.step;
-        lastActionTime = Date.now();
-        addTimeline('Action → ' + payload.step);
-      }
-      if (payload.reason || payload.detail || payload.ok) {
-        curResult.textContent = payload.reason || (payload.detail ? JSON.stringify(payload.detail) : (payload.ok ? 'ok' : '')) ;
-      }
-    }
-
-    // push concise log line
-    if (evName === 'warn') pushLog(`[${evName}] ${short(payload)}`, 'warn');
-    else if (evName === 'error' || evName === 'fatal') pushLog(`[${evName}] ${short(payload)}`, 'error');
-    else if (evName === 'success' || evName === 'done') pushLog(`[${evName}] ${short(payload)}`, 'success');
-    else pushLog(`[${evName}] ${short(payload)}`, 'info');
+    });
   });
-});
 
-    es.onerror = (e) => {
-      pushLog('SSE error / closed', 'warn');
-      setStatus('disconnected', 'status-idle');
-      // close on error (EventSource often stays open but fails)
-      try { es.close(); } catch(_) {}
-      es = null;
-      scheduleReconnect();
-    };
-  }
+  es.onerror = (e) => {
+    pushLog('SSE error / closed', 'warn');
+    setStatus('disconnected', 'status-idle');
+    try { es.close(); } catch(_) {}
+    es = null;
+    scheduleReconnect();
+  };
+}
 
   function disconnect() {
     if (es) {
