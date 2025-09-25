@@ -223,15 +223,23 @@
     };
 
     // handle named events used by server
-    const known = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
-    known.forEach(name => {
-      es.addEventListener(name, (evt) => {
-        // screenshot event may be plain base64 string (not JSON)
-        if (name === 'screenshot') {
-          const payload = evt.data;
-          handleScreenshot(payload);
-          return;
-        }
+    const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
+named.forEach(ev=>{
+  eventSource.addEventListener(ev, (evt) => {
+    try {
+      if (ev === 'screenshot') {
+        // index log-এ screenshot event দেখাবো না
+        return;
+      }
+      const d = JSON.parse(evt.data);
+      appendLog(`[${ev}] ${JSON.stringify(d)}`);
+    } catch(err){
+      if (ev !== 'screenshot') {
+        appendLog(`[${ev}] ${evt.data}`);
+      }
+    }
+  });
+});
 
         let payload = null;
         try { payload = JSON.parse(evt.data); } catch(e) { payload = evt.data; }
