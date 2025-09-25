@@ -222,65 +222,64 @@
       else pushLog('[message] ' + JSON.stringify(d));
     };
 
-    // handle named events used by server
-    const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
-named.forEach(ev=>{
-  eventSource.addEventListener(ev, (evt) => {
-    try {
-      if (ev === 'screenshot') {
-        // index log-এ screenshot event দেখাবো না
-        return;
+ // replace the broken named event handling block with this
+const named = ['log','info','warn','error','done','success','fatal','cookieStatus','screenshot'];
+named.forEach((evName) => {
+  es.addEventListener(evName, (evt) => {
+    // try parse payload once
+    let payload;
+    try { payload = JSON.parse(evt.data); } catch(e) { payload = evt.data; }
+
+    // handle screenshots specially
+    if (evName === 'screenshot') {
+      // server may send raw base64 or { data: '...', timestamp: ... }
+      if (typeof payload === 'string') {
+        handleScreenshot(payload);
+      } else if (payload && payload.data) {
+        handleScreenshot(payload.data);
+      } else {
+        // ignore other screenshot shapes
       }
-      const d = JSON.parse(evt.data);
-      appendLog(`[${ev}] ${JSON.stringify(d)}`);
-    } catch(err){
-      if (ev !== 'screenshot') {
-        appendLog(`[${ev}] ${evt.data}`);
+      // optionally log a short info line (not the big base64)
+      pushLog('[screenshot] frame received', 'info');
+      addTimeline('Screenshot frame');
+      return;
+    }
+
+    // for other named events show compact info in log + update UI bits
+    const short = (obj) => {
+      try {
+        if (!obj) return '';
+        if (typeof obj === 'string') return obj;
+        // show msg/step/url/reason if present
+        return obj.msg || obj.step || obj.url || obj.reason || JSON.stringify(obj);
+      } catch (e) { return String(obj); }
+    };
+
+    // Update UI state from payload if possible
+    if (payload && typeof payload === 'object') {
+      if (payload.url) {
+        curUrl.textContent = payload.url || '-';
+        document.getElementById('urlTime').textContent = now();
+        addTimeline('URL → ' + (payload.url || '-'));
+      }
+      if (payload.step) {
+        curAction.textContent = payload.step;
+        lastActionTime = Date.now();
+        addTimeline('Action → ' + payload.step);
+      }
+      if (payload.reason || payload.detail || payload.ok) {
+        curResult.textContent = payload.reason || (payload.detail ? JSON.stringify(payload.detail) : (payload.ok ? 'ok' : '')) ;
       }
     }
+
+    // push concise log line
+    if (evName === 'warn') pushLog(`[${evName}] ${short(payload)}`, 'warn');
+    else if (evName === 'error' || evName === 'fatal') pushLog(`[${evName}] ${short(payload)}`, 'error');
+    else if (evName === 'success' || evName === 'done') pushLog(`[${evName}] ${short(payload)}`, 'success');
+    else pushLog(`[${evName}] ${short(payload)}`, 'info');
   });
 });
-
-        let payload = null;
-        try { payload = JSON.parse(evt.data); } catch(e) { payload = evt.data; }
-
-        if (name === 'log' || name === 'info' || name === 'warn' || name === 'error') {
-          // try to surface url / step / msg
-          if (payload && typeof payload === 'object') {
-            if (payload.url) {
-              curUrl.textContent = payload.url || '-';
-              document.getElementById('urlTime').textContent = now();
-              addTimeline('URL → ' + (payload.url || '-'));
-            }
-            if (payload.step) {
-              curAction.textContent = payload.step;
-              lastActionTime = Date.now();
-              addTimeline('Action → ' + payload.step);
-            }
-            if (payload.msg && String(payload.msg).toLowerCase().includes('page-url')) {
-              // sometimes page-url comes as info.msg + url
-              if (payload.url) { curUrl.textContent = payload.url; document.getElementById('urlTime').textContent = now(); }
-            }
-            // show detail as result
-            if (payload.ok || payload.reason || payload.detail) {
-              curResult.textContent = payload.reason || (payload.detail ? JSON.stringify(payload.detail) : (payload.ok ? 'ok' : '')) ;
-            }
-          } else {
-            // string payload
-            pushLog(`[${name}] ${String(payload)}`, name === 'warn' ? 'warn' : name === 'error' ? 'error' : 'info');
-          }
-          // always write to log area
-          pushLog(`[${name}] ${JSON.stringify(payload)}`, name === 'warn' ? 'warn' : name === 'error' ? 'error' : 'info');
-        } else if (name === 'success' || name === 'done' || name === 'fatal') {
-          pushLog(`[${name}] ${JSON.stringify(payload)}`, name === 'fatal' ? 'error' : 'success');
-          if (payload && payload.msg) addTimeline(`${name.toUpperCase()}: ${payload.msg}`);
-        } else if (name === 'cookieStatus') {
-          pushLog(`[cookieStatus] ${JSON.stringify(payload)}`);
-        } else {
-          pushLog(`[${name}] ${JSON.stringify(payload)}`);
-        }
-      });
-    });
 
     es.onerror = (e) => {
       pushLog('SSE error / closed', 'warn');
