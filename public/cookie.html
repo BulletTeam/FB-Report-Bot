@@ -16,6 +16,7 @@
     .btn{cursor:pointer;padding:10px 14px;border-radius:10px;border:0;font-weight:800}
     .btn-primary{background:var(--blue);color:#fff}
     .btn-ghost{background:#f8fbff;border:1px solid #dfefff;color:var(--blue)}
+    .btn-small{padding:8px 10px;border-radius:8px;font-weight:700}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
     th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
     pre.log{background:#0b1220;color:#9fe0ff;padding:12px;border-radius:8px;height:200px;overflow:auto;font-family:monospace}
@@ -66,6 +67,13 @@
         </div>
       </div>
 
+      <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <div class="small" style="margin-right:6px">Download:</div>
+        <button id="downloadLive" class="btn-small btn-ghost">Live only</button>
+        <button id="downloadParsed" class="btn-small btn-ghost">Parsed (live+parsed)</button>
+        <button id="downloadAll" class="btn-small btn-ghost">All (raw lines)</button>
+      </div>
+
       <table id="cookieTable" aria-live="polite">
         <thead><tr><th style="width:48px">#</th><th>Snippet</th><th style="width:110px">Status</th><th>Reason/URL</th><th style="width:160px">ParsedAt</th></tr></thead>
         <tbody></tbody>
@@ -96,8 +104,13 @@
   const connectSSEBtn = document.getElementById('connectSSEBtn');
   const disconnectSSEBtn = document.getElementById('disconnectSSEBtn');
 
+  const downloadLiveBtn = document.getElementById('downloadLive');
+  const downloadParsedBtn = document.getElementById('downloadParsed');
+  const downloadAllBtn = document.getElementById('downloadAll');
+
   let eventSource = null;
   let lastSession = null;
+  let lastFetchedList = null; // cache last cookieList response for downloads
 
   // load saved token
   adminInput.value = localStorage.getItem('adminToken') || '';
@@ -196,7 +209,6 @@
         if (!target) appendLog('Auto-start requested but no target provided');
         else {
           appendLog('Auto-starting runner for session ' + sid);
-          // start job via /start
           try {
             const startRes = await fetch('/start', {
               method:'POST',
@@ -225,6 +237,7 @@
       const r = await fetch(`/cookieList?adminToken=${encodeURIComponent(token)}`);
       if (!r.ok) { appendLog('cookieList fetch returned non-200'); return; }
       const j = await r.json();
+      lastFetchedList = j;
       renderCookieList(j);
     } catch(e){ appendLog('fetchCookieList error: '+ (e && e.message)); }
   }
@@ -268,6 +281,51 @@
       textCookies.value = txt;
       appendLog('File loaded to paste area ('+f.name+')');
     } catch(err){ appendLog('File read error: ' + (err && err.message)); }
+  });
+
+  // ---- Download helpers ----
+  function buildLinesFromList(list, filterFn) {
+    if (!list || !Array.isArray(list.cookies)) return [];
+    return list.cookies.filter(filterFn).map(c => (c.originalLine || '').trim()).filter(Boolean);
+  }
+
+  function downloadText(filename, text) {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  downloadLiveBtn.addEventListener('click', () => {
+    if (!lastFetchedList) { appendLog('Please refresh list first (use Refresh List)'); fetchCookieList(); return; }
+    const lines = buildLinesFromList(lastFetchedList, c => (c.validateResult && c.validateResult.status === 'live'));
+    if (!lines.length) { appendLog('No live cookies found to download'); alert('No live cookies found'); return; }
+    downloadText(`cookies_live_${Date.now()}.txt`, lines.join('\n'));
+    appendLog(`Downloaded ${lines.length} live cookie(s)`);
+  });
+
+  downloadParsedBtn.addEventListener('click', () => {
+    if (!lastFetchedList) { appendLog('Please refresh list first (use Refresh List)'); fetchCookieList(); return; }
+    const lines = buildLinesFromList(lastFetchedList, c => {
+      const s = c.validateResult && c.validateResult.status;
+      return s === 'live' || s === 'parsed';
+    });
+    if (!lines.length) { appendLog('No parsed cookies found to download'); alert('No parsed cookies found'); return; }
+    downloadText(`cookies_parsed_${Date.now()}.txt`, lines.join('\n'));
+    appendLog(`Downloaded ${lines.length} parsed cookie(s)`);
+  });
+
+  downloadAllBtn.addEventListener('click', () => {
+    if (!lastFetchedList) { appendLog('Please refresh list first (use Refresh List)'); fetchCookieList(); return; }
+    const lines = buildLinesFromList(lastFetchedList, () => true);
+    if (!lines.length) { appendLog('No cookie lines found to download'); alert('No cookies found'); return; }
+    downloadText(`cookies_all_${Date.now()}.txt`, lines.join('\n'));
+    appendLog(`Downloaded ${lines.length} cookie(s) (raw lines)`);
   });
 
   // initial load
