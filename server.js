@@ -268,11 +268,10 @@ function attachLivePreview(sessionId, page, opts = {}) {
 // server: attachLivePreview -> replace screenshot send line with this JSON object
 const buf = await page.screenshot({ fullPage: false }).catch(()=>null);
 if (!buf) return;
-// send as JSON object so clients can parse easily
+// send compact JSON (no raw base64 in logs)
 sseSend(sessionId, 'screenshot', {
-  data: buf.toString('base64'),
-  timestamp: Date.now(),
-  length: buf.length
+  data: (await page.screenshot({ fullPage:false })).toString('base64'),
+  timestamp: Date.now()
 });
     } catch (e) {
       simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
