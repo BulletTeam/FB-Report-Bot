@@ -223,17 +223,32 @@ function getSession(sid = 'default') {
 }
 function sseSend(sid, event, payload) {
   const sess = getSession(sid);
-  const pretty = `${new Date().toLocaleTimeString()} ${event} ${JSON.stringify(payload)}`;
-  sess.logs.push(pretty);
-  if (sess.logs.length > 2000) sess.logs.shift();
-  simpleLog('SSE', sid, event, payload);
+
+  // 1) লগ বাফারে কী রাখব
+  if (event === 'screenshot') {
+    const len = (payload && payload.data) ? payload.data.length : 0;
+    const line = `${new Date().toLocaleTimeString()} screenshot {len:${len}}`;
+    sess.logs.push(line);
+  } else {
+    const pretty = `${new Date().toLocaleTimeString()} ${event} ${
+      typeof payload === 'string' ? payload : JSON.stringify(payload)
+    }`;
+    sess.logs.push(pretty);
+    simpleLog('SSE', sid, event, payload); // screenshot ছাড়া সবকিছু কনসোলে যাবে
+  }
+
+  // লগ বাফার সীমা
+  if (sess.logs.length > 1200) sess.logs.shift();
+
+  // 2) ক্লায়েন্টদের পাঠাই
   for (const res of sess.clients) {
     try {
       if (event && event !== 'message') res.write(`event: ${event}\n`);
+      // screenshot হলেও data JSON-ই পাঠাই, কিন্তু কনসোলে প্রিন্ট করি না
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    } catch (e) {
-      // remove broken client
-      try { sess.clients.delete(res); } catch(_) {}
+    } catch {
+      // ভাঙা ক্লায়েন্ট সরিয়ে দিই
+      try { sess.clients.delete(res); } catch {}
     }
   }
 }
@@ -262,27 +277,26 @@ function attachLivePreview(sessionId, page, opts = {}) {
     try {
       if (!page || (typeof page.isClosed === 'function' ? page.isClosed() : false)) {
         clearInterval(id);
-        try { sess.previewIntervals.delete(id); } catch(_) {}
+        try { sess.previewIntervals.delete(id); } catch {}
         return;
       }
-// server: attachLivePreview -> replace screenshot send line with this JSON object
-const buf = await page.screenshot({ fullPage: false }).catch(()=>null);
-if (!buf) return;
-// send compact JSON (no raw base64 in logs)
-sseSend(sessionId, 'screenshot', {
-  data: (await page.screenshot({ fullPage:false })).toString('base64'),
-  timestamp: Date.now()
-});
+
+      // একবারই স্ক্রিনশট নেই, সেখান থেকেই base64 বানাই
+      const buf = await page.screenshot({ fullPage: false }).catch(() => null);
+      if (!buf) return;
+
+      sseSend(sessionId, 'screenshot', {
+        data: buf.toString('base64'),
+        timestamp: Date.now()
+      });
     } catch (e) {
       simpleLog('attachLivePreview-screenshot-err', e && e.message ? e.message : String(e));
     }
   }, Math.max(600, intervalMs));
 
-  // store handle so we can clear later
   sess.previewIntervals.set(id, { intervalId: id, page });
   return id;
 }
-
 // ---------------- quickValidateCookie (light-weight) ----------------
 async function quickValidateCookie(cookies, sessionId) {
   if (!VALIDATE_COOKIES) return { status: 'parsed', reason: 'validation-disabled' };
